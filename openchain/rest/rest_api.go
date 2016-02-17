@@ -30,6 +30,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/context"
 
@@ -933,8 +934,15 @@ func StartOpenchainRESTServer(server *oc.ServerOpenchain, devops *oc.Devops) {
 	// Add not found page
 	router.NotFound((*ServerOpenchainREST).NotFound)
 
+	httpServer := http.Server{
+		Addr:         viper.GetString("rest.address"),
+		Handler:      router,
+		ReadTimeout:  300 * time.Millisecond,
+		WriteTimeout: 300 * time.Millisecond,
+	}
+
 	// Start server
-	err := http.ListenAndServe(viper.GetString("rest.address"), router)
+	err := httpServer.ListenAndServe()
 	if err != nil {
 		restLogger.Error(fmt.Sprintf("ListenAndServe: %s", err))
 	}
