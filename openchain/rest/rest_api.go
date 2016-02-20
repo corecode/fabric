@@ -43,6 +43,7 @@ import (
 	"github.com/openblockchain/obc-peer/openchain/chaincode"
 	"github.com/openblockchain/obc-peer/openchain/crypto"
 	"github.com/openblockchain/obc-peer/openchain/crypto/utils"
+	"github.com/openblockchain/obc-peer/openchain/ledger"
 	pb "github.com/openblockchain/obc-peer/protos"
 )
 
@@ -429,6 +430,22 @@ func (s *ServerOpenchainREST) GetBlockByNumber(rw web.ResponseWriter, req *web.R
 func (s *ServerOpenchainREST) GetTransactionByUUID(rw web.ResponseWriter, req *web.Request) {
 	// Parse out the transaction UUID
 	txUUID := req.PathParams["uuid"]
+
+	if timeout, ok := req.URL.Query()["wait"]; ok {
+		timeoutStr := ""
+		if len(timeout) > 0 {
+			timeoutStr = timeout[0]
+		}
+		timeout, err := time.ParseDuration(timeoutStr)
+		if err != nil {
+			timeout = 5 * time.Second
+		}
+		w := ledger.TransactionWaiter(txUUID)
+		select {
+		case <-w:
+		case <-time.After(timeout):
+		}
+	}
 
 	// Retrieve the transaction matching the UUID
 	tx, err := s.server.GetTransactionByUUID(context.Background(), txUUID)

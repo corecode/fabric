@@ -401,6 +401,24 @@ func (ledger *Ledger) resetForNextTxGroup(txCommited bool) {
 	ledger.state.ClearInMemoryChanges(txCommited)
 }
 
+var transactionNotify = make(map[string]chan struct{})
+
+func TransactionWaiter(uuid string) <-chan struct{} {
+	if c, ok := transactionNotify[uuid]; ok {
+		return c
+	}
+	c := make(chan struct{})
+	transactionNotify[uuid] = c
+
+	_, err := ledger.GetTransactionByUUID(uuid)
+	if err != ErrResourceNotFound {
+		close(c)
+		delete(transactionNotify, uuid)
+	}
+
+	return c
+}
+
 func sendProducerBlockEvent(block *protos.Block) {
 
 	// Remove payload from deploy transactions. This is done to make block
@@ -422,6 +440,11 @@ func sendProducerBlockEvent(block *protos.Block) {
 				continue
 			}
 			transaction.Payload = deploymentSpecBytes
+		}
+
+		if notify, ok := transactionNotify[transaction.Uuid]; ok {
+			close(notify)
+			delete(transactionNotify, transaction.Uuid)
 		}
 	}
 
