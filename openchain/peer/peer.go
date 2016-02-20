@@ -521,6 +521,8 @@ func getValidatorStreamAddress() string {
 func (p *PeerImpl) ExecuteTransaction(transaction *pb.Transaction) *pb.Response {
 	serverClient := pb.NewPeerClient(p.peerConn)
 	stream, err := serverClient.Chat(context.Background())
+	defer stream.CloseSend()
+
 	if err != nil {
 		return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(fmt.Sprintf("Error sending transactions to peer:  %s", err))}
 	}
@@ -561,8 +563,6 @@ func (p *PeerImpl) ExecuteTransaction(transaction *pb.Transaction) *pb.Response 
 	if err != nil {
 		response = &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(fmt.Sprintf("Error unpacking Payload from %s message: %s", pb.OpenchainMessage_CONSENSUS, err))}
 	}
-
-	stream.CloseSend()
 
 	return response
 }
