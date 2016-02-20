@@ -426,11 +426,7 @@ func (s *ServerOpenchainREST) GetBlockByNumber(rw web.ResponseWriter, req *web.R
 	}
 }
 
-// GetTransactionByUUID returns a transaction matching the specified UUID
-func (s *ServerOpenchainREST) GetTransactionByUUID(rw web.ResponseWriter, req *web.Request) {
-	// Parse out the transaction UUID
-	txUUID := req.PathParams["uuid"]
-
+func (s *ServerOpenchainREST) maybeWait(uuid string, req *web.Request) {
 	if timeout, ok := req.URL.Query()["wait"]; ok {
 		timeoutStr := ""
 		if len(timeout) > 0 {
@@ -440,12 +436,20 @@ func (s *ServerOpenchainREST) GetTransactionByUUID(rw web.ResponseWriter, req *w
 		if err != nil {
 			timeout = 5 * time.Second
 		}
-		w := ledger.TransactionWaiter(txUUID)
+		w := ledger.TransactionWaiter(uuid)
 		select {
 		case <-w:
 		case <-time.After(timeout):
 		}
 	}
+}
+
+// GetTransactionByUUID returns a transaction matching the specified UUID
+func (s *ServerOpenchainREST) GetTransactionByUUID(rw web.ResponseWriter, req *web.Request) {
+	// Parse out the transaction UUID
+	txUUID := req.PathParams["uuid"]
+
+	s.maybeWait(txUUID, req)
 
 	// Retrieve the transaction matching the UUID
 	tx, err := s.server.GetTransactionByUUID(context.Background(), txUUID)
@@ -734,11 +738,13 @@ func (s *ServerOpenchainREST) Invoke(rw web.ResponseWriter, req *web.Request) {
 	}
 
 	// Clients will need the txuuid in order to track it after invocation
-	txuuid := resp.Msg
+	txuuid := string(resp.Msg)
+
+	s.maybeWait(txuuid, req)
 
 	rw.WriteHeader(http.StatusOK)
-	fmt.Fprintf(rw, "{\"OK\": \"Successfully invoked chainCode.\",\"message\": \"%s\"}", string(txuuid))
-	restLogger.Info("Successfuly invoked chainCode with txuuid (%s)\n", string(txuuid))
+	fmt.Fprintf(rw, "{\"OK\": \"Successfully invoked chainCode.\",\"message\": \"%s\"}", txuuid)
+	restLogger.Info("Successfuly invoked chainCode with txuuid (%s)\n", txuuid)
 }
 
 // Query performs the requested query on the target Chaincode.
@@ -952,10 +958,9 @@ func StartOpenchainRESTServer(server *oc.ServerOpenchain, devops *oc.Devops) {
 	router.NotFound((*ServerOpenchainREST).NotFound)
 
 	httpServer := http.Server{
-		Addr:         viper.GetString("rest.address"),
-		Handler:      router,
-		ReadTimeout:  300 * time.Millisecond,
-		WriteTimeout: 300 * time.Millisecond,
+		Addr:        viper.GetString("rest.address"),
+		Handler:     router,
+		ReadTimeout: 300 * time.Millisecond,
 	}
 
 	// Start server
