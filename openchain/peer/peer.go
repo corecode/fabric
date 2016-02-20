@@ -224,11 +224,14 @@ type PeerImpl struct {
 	handlerMap     *handlerMap
 	ledgerWrapper  *ledgerWrapper
 	secHelper      crypto.Peer
+	endpoint       *pb.PeerEndpoint
 	peerConn       *grpc.ClientConn
 }
 
 // NewPeerWithHandler returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
 func NewPeerWithHandler(handlerFact HandlerFactory) (*PeerImpl, error) {
+	var err error
+
 	peer := new(PeerImpl)
 	if handlerFact == nil {
 		return nil, errors.New("Cannot supply nil handler factory")
@@ -240,7 +243,6 @@ func NewPeerWithHandler(handlerFact HandlerFactory) (*PeerImpl, error) {
 	if viper.GetBool("security.enabled") {
 		enrollID := viper.GetString("security.enrollID")
 		enrollSecret := viper.GetString("security.enrollSecret")
-		var err error
 		if viper.GetBool("peer.validator.enabled") {
 			peerLogger.Debug("Registering validator with enroll ID: %s", enrollID)
 			if err = crypto.RegisterValidator(enrollID, nil, enrollID, enrollSecret); nil != err {
@@ -262,6 +264,16 @@ func NewPeerWithHandler(handlerFact HandlerFactory) (*PeerImpl, error) {
 				return nil, err
 			}
 		}
+	}
+
+	peer.endpoint, err = GetPeerEndpoint()
+	if err != nil {
+		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
+	}
+
+	if viper.GetBool("security.enabled") {
+		// Set the PkiID on the PeerEndpoint if security is enabled
+		peer.endpoint.PkiID = peer.GetSecHelper().GetID()
 	}
 
 	ledgerPtr, err := ledger.GetLedger()
@@ -557,12 +569,7 @@ func (p *PeerImpl) ExecuteTransaction(transaction *pb.Transaction) *pb.Response 
 
 // GetPeerEndpoint returns the endpoint for this peer
 func (p *PeerImpl) GetPeerEndpoint() (*pb.PeerEndpoint, error) {
-	ep, err := GetPeerEndpoint()
-	if err == nil && viper.GetBool("security.enabled") {
-		// Set the PkiID on the PeerEndpoint if security is enabled
-		ep.PkiID = p.GetSecHelper().GetID()
-	}
-	return ep, err
+	return p.endpoint, nil
 }
 
 func (p *PeerImpl) newHelloMessage() (*pb.HelloMessage, error) {
