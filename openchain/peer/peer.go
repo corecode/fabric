@@ -520,7 +520,9 @@ func getValidatorStreamAddress() string {
 //ExecuteTransaction executes transactions decides to do execute in dev or prod mode
 func (p *PeerImpl) ExecuteTransaction(transaction *pb.Transaction) *pb.Response {
 	serverClient := pb.NewPeerClient(p.peerConn)
-	stream, err := serverClient.Chat(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream, err := serverClient.Chat(ctx)
 	defer stream.CloseSend()
 
 	if err != nil {
