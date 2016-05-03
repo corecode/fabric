@@ -79,7 +79,7 @@ func (hd *HashLedgerDirectory) GetLedgerByPeerID(peerID *protos.PeerID) (consens
 func (hd *HashLedgerDirectory) GetNetworkInfo() (self *protos.PeerEndpoint, network []*protos.PeerEndpoint, err error) {
 	network = make([]*protos.PeerEndpoint, len(hd.remoteLedgers)+1)
 	i := 0
-	for peerID, _ := range hd.remoteLedgers {
+	for peerID := range hd.remoteLedgers {
 		peerID := peerID // Get a memory address which will not be overwritten
 		network[i] = &protos.PeerEndpoint{
 			ID:   &peerID,
@@ -112,7 +112,7 @@ func (hd *HashLedgerDirectory) GetNetworkHandles() (self *protos.PeerID, network
 	return
 }
 
-const MAGIC_DELTA_KEY string = "The only key/string we ever use for deltas"
+const magicDeltaKey string = "The only key/string we ever use for deltas"
 
 type MockLedger struct {
 	cleanML       *MockLedger
@@ -537,7 +537,7 @@ func (mock *MockLedger) ApplyStateDelta(id interface{}, delta *statemgmt.StateDe
 
 	d, r := binary.Uvarint(SimpleStateDeltaToBytes(delta))
 	if r <= 0 {
-		return fmt.Errorf("State delta could not be applied, was not a uint64, %x", delta)
+		return fmt.Errorf("State delta could not be applied, was not a uint64, %+v", delta)
 	}
 	if !delta.RollBackwards {
 		mock.state += d
@@ -748,14 +748,14 @@ func SimpleBytesToStateDelta(bDelta []byte) *statemgmt.StateDelta {
 		RollBackwards: false,
 	}
 	mDelta.ChaincodeStateDeltas = make(map[string]*statemgmt.ChaincodeStateDelta)
-	mDelta.ChaincodeStateDeltas[MAGIC_DELTA_KEY] = &statemgmt.ChaincodeStateDelta{}
-	mDelta.ChaincodeStateDeltas[MAGIC_DELTA_KEY].UpdatedKVs = make(map[string]*statemgmt.UpdatedValue)
-	mDelta.ChaincodeStateDeltas[MAGIC_DELTA_KEY].UpdatedKVs[MAGIC_DELTA_KEY] = &statemgmt.UpdatedValue{Value: bDelta}
+	mDelta.ChaincodeStateDeltas[magicDeltaKey] = &statemgmt.ChaincodeStateDelta{}
+	mDelta.ChaincodeStateDeltas[magicDeltaKey].UpdatedKVs = make(map[string]*statemgmt.UpdatedValue)
+	mDelta.ChaincodeStateDeltas[magicDeltaKey].UpdatedKVs[magicDeltaKey] = &statemgmt.UpdatedValue{Value: bDelta}
 	return mDelta
 }
 
 func SimpleStateDeltaToBytes(sDelta *statemgmt.StateDelta) []byte {
-	return sDelta.ChaincodeStateDeltas[MAGIC_DELTA_KEY].UpdatedKVs[MAGIC_DELTA_KEY].Value
+	return sDelta.ChaincodeStateDeltas[magicDeltaKey].UpdatedKVs[magicDeltaKey].Value
 }
 
 func SimpleGetConsensusMetadata(blockNumber uint64) []byte {
@@ -861,15 +861,15 @@ func TestMockLedger(t *testing.T) {
 		}
 
 		delta := &statemgmt.StateDelta{}
-		if err := delta.Unmarshal(syncStateMessage.Delta); nil != err {
+		if err = delta.Unmarshal(syncStateMessage.Delta); nil != err {
 			t.Fatalf("Error unmarshaling state delta : %s", err)
 		}
 
-		if err := ml.ApplyStateDelta(blockNumber, delta); err != nil {
+		if err = ml.ApplyStateDelta(blockNumber, delta); err != nil {
 			t.Fatalf("Error applying state delta : %s", err)
 		}
 
-		if err := ml.CommitStateDelta(blockNumber); err != nil {
+		if err = ml.CommitStateDelta(blockNumber); err != nil {
 			t.Fatalf("Error committing state delta : %s", err)
 		}
 	}

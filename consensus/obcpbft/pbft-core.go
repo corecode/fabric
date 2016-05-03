@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/hyperledger/fabric/consensus"
@@ -48,7 +47,7 @@ func init() {
 
 const (
 	// An ugly thing, we need to create timers, then stop them before they expire, so use a large timeout
-	UnreasonableTimeout = 100 * time.Hour
+	unreasonableTimeout = 100 * time.Hour
 )
 
 // =============================================================================
@@ -86,8 +85,6 @@ type checkpointMessage struct {
 
 type pbftCore struct {
 	// internal data
-	internalLock     sync.Mutex
-	executing        bool                    // signals that application is executing
 	closed           chan struct{}           // informs the main thread to exit (never written to, only closed)
 	incomingChan     chan *pbftMessage       // informs the main thread of new messages
 	stateUpdateChan  chan *checkpointMessage // informs the main thread the state has updated (via state transfer)
@@ -160,10 +157,6 @@ type msgCert struct {
 type vcidx struct {
 	v  uint64
 	id uint64
-}
-
-type stateTransferMetadata struct {
-	sequenceNumber uint64
 }
 
 type sortableUint64Slice []uint64
@@ -1208,7 +1201,7 @@ func (instance *pbftCore) startTimer(timeout time.Duration, reason string) {
 }
 
 func (instance *pbftCore) stopTimer() {
-	instance.newViewTimer = time.NewTimer(UnreasonableTimeout) // Create a new timer, then stop it, if it has already fired, it will still read on the channel
+	instance.newViewTimer = time.NewTimer(unreasonableTimeout) // Create a new timer, then stop it, if it has already fired, it will still read on the channel
 	instance.newViewTimer.Stop()
 	logger.Debug("Replica %d stopping a running new view timer", instance.id)
 	instance.timerActive = false

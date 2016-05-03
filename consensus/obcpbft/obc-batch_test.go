@@ -56,7 +56,7 @@ func TestNetworkBatch(t *testing.T) {
 		t.Fatalf("%d message expected in primary's batchStore, found %d", 1, l)
 	}
 
-	err = net.endpoints[2].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(2), broadcaster)
+	net.endpoints[2].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(2), broadcaster)
 	net.process()
 
 	if l := len(net.endpoints[0].(*consumerEndpoint).consumer.(*obcBatch).batchStore); l != 0 {

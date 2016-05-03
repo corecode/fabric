@@ -159,6 +159,7 @@ func (op *obcClassic) execute(seqNo uint64, txRaw []byte) {
 	_ = err    // XXX what to do on error?
 	_ = result // XXX what to do with the result?
 	_, err = op.stack.CommitTxBatch(id, meta)
+	_ = err // XXX what to do on error?
 
 	op.pbft.execDone()
 }

@@ -82,7 +82,7 @@ func createRemoteLedgers(low, high uint64) *MockRemoteHashLedgerDirectory {
 
 func executeStateTransfer(sts *StateTransferState, ml *MockLedger, blockNumber, sequenceNumber uint64, mrls *MockRemoteHashLedgerDirectory) error {
 
-	for peerID, _ := range mrls.remoteLedgers {
+	for peerID := range mrls.remoteLedgers {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = blockNumber + 1
 	}
 
@@ -247,7 +247,7 @@ func TestCatchupSyncBlocksAllErrors(t *testing.T) {
 		defer sts.Stop()
 		sts.BlockRequestTimeout = 10 * time.Millisecond
 
-		for peerID, _ := range mrls.remoteLedgers {
+		for peerID := range mrls.remoteLedgers {
 			mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = blockNumber + 1
 		}
 
@@ -374,7 +374,7 @@ func TestCatchupSyncDeltasError(t *testing.T) {
 func TestCatchupSimpleSynchronous(t *testing.T) {
 	mrls := createRemoteLedgers(1, 3)
 
-	for peerID, _ := range mrls.remoteLedgers {
+	for peerID := range mrls.remoteLedgers {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 8
 	}
 
@@ -392,7 +392,7 @@ func TestCatchupSimpleSynchronous(t *testing.T) {
 func TestCatchupSimpleSynchronousSuccess(t *testing.T) {
 	mrls := createRemoteLedgers(1, 3)
 
-	for peerID, _ := range mrls.remoteLedgers {
+	for peerID := range mrls.remoteLedgers {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 8
 	}
 
@@ -479,7 +479,7 @@ func executeBlockRecoveryWithPanic(ml *MockLedger, millisTimeout int, mrls *Mock
 func TestCatchupLaggingChains(t *testing.T) {
 	mrls := createRemoteLedgers(0, 3)
 
-	for peerID, _ := range mrls.remoteLedgers {
+	for peerID := range mrls.remoteLedgers {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 701
 	}
 
@@ -501,7 +501,7 @@ func TestCatchupLaggingChainsErrors(t *testing.T) {
 	for _, failureType := range []mockResponse{Timeout, Corrupt} {
 		mrls := createRemoteLedgers(0, 3)
 
-		for peerID, _ := range mrls.remoteLedgers {
+		for peerID := range mrls.remoteLedgers {
 			mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 701
 		}
 
@@ -520,7 +520,7 @@ func TestCatchupLaggingChainsErrors(t *testing.T) {
 func TestCatchupCorruptChains(t *testing.T) {
 	mrls := createRemoteLedgers(0, 3)
 
-	for peerID, _ := range mrls.remoteLedgers {
+	for peerID := range mrls.remoteLedgers {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 701
 	}
 

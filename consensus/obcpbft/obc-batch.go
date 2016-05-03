@@ -162,6 +162,7 @@ func (op *obcBatch) execute(seqNo uint64, tbRaw []byte) {
 	_ = err    // XXX what to do on error?
 	_ = result // XXX what to do with the result?
 	_, err = op.stack.CommitTxBatch(id, meta)
+	_ = err // XXX what to do on error?
 
 	op.pbft.execDone()
 }
@@ -234,11 +235,11 @@ func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) e
 		} else { // backup
 			batchMsg := &BatchMessage{&BatchMessage_Request{ocMsg.Payload}}
 			packedBatchMsg, _ := proto.Marshal(batchMsg)
-			ocMsg := &pb.Message{
+			m := &pb.Message{
 				Type:    pb.Message_CONSENSUS,
 				Payload: packedBatchMsg,
 			}
-			op.stack.Broadcast(ocMsg, pb.PeerEndpoint_UNDEFINED)
+			op.stack.Broadcast(m, pb.PeerEndpoint_UNDEFINED)
 		}
 		return nil
 	}
@@ -255,7 +256,7 @@ func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) e
 
 	if req := batchMsg.GetRequest(); req != nil {
 		if (op.pbft.primary(op.pbft.view) == op.pbft.id) && op.pbft.activeView {
-			err := op.leaderProcReq(req)
+			err = op.leaderProcReq(req)
 			if err != nil {
 				return err
 			}
