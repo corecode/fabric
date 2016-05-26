@@ -124,6 +124,8 @@ type pbftCore struct {
 	lastNewViewTimeout time.Duration       // last timeout we used during this view change
 	outstandingReqs    map[string]*Request // track whether we are waiting for requests to execute
 	newViewTimerReason string              // what triggered the timer
+	nullRequestTimer   *time.Timer         // timeout triggering a null request
+	nullRequestTimeout time.Duration       // duration for this timeout
 
 	missingReqs map[string]bool // for all the assigned, non-checkpointed requests we might be missing during view-change
 
@@ -216,6 +218,10 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack) *pbftCore 
 	if err != nil {
 		panic(fmt.Errorf("Cannot parse new view timeout: %s", err))
 	}
+	instance.nullRequestTimeout, err = time.ParseDuration(config.GetString("general.timeout.nullrequest"))
+	if err != nil {
+		instance.nullRequestTimeout = 0
+	}
 
 	instance.activeView = true
 	instance.replicaCount = instance.N
@@ -229,6 +235,11 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack) *pbftCore 
 	logger.Info("PBFT Checkpoint period (K) = %v", instance.K)
 	logger.Info("PBFT Log multiplier = %v", instance.logMultiplier)
 	logger.Info("PBFT log size (L) = %v", instance.L)
+	if instance.nullRequestTimeout > 0 {
+		logger.Info("PBFT null requests timeout = %v", instance.nullRequestTimeout)
+	} else {
+		logger.Info("PBFT null requests disabled")
+	}
 
 	// init the logs
 	instance.certStore = make(map[msgID]*msgCert)
@@ -251,6 +262,8 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack) *pbftCore 
 
 	instance.stopTimer()
 	instance.restoreState()
+	instance.nullRequestTimer = time.NewTimer(UnreasonableTimeout)
+	instance.nullRequestTimer.Stop()
 
 	go instance.main()
 
@@ -278,7 +291,7 @@ func (instance *pbftCore) main() {
 			close(instance.idleChan)
 			return
 		case <-instance.newViewTimer.C:
-			logger.Info("Replica %d view change timer expired, sending view change", instance.id)
+			logger.Info("Replica %d view change timer expired, sending view change: %s", instance.id, instance.newViewTimerReason)
 			instance.sendViewChange()
 		case msg := <-instance.incomingChan:
 			logger.Debug("Replica %d received incoming message from %v", instance.id, msg.sender)
@@ -297,6 +310,8 @@ func (instance *pbftCore) main() {
 			instance.executeOutstanding()
 		case <-instance.execCompleteChan:
 			instance.execDoneSync()
+		case <-instance.nullRequestTimer.C:
+			instance.nullRequestHandler()
 		case work := <-instance.injectChan:
 			work() // Used to allow the caller to steal use of the main thread
 		case instance.idleChan <- struct{}{}:
@@ -449,6 +464,23 @@ func (instance *pbftCore) request(msgPayload []byte, senderID uint64) error {
 	return nil
 }
 
+func (instance *pbftCore) nullRequestHandler() {
+	if !instance.activeView {
+		return
+	}
+
+	if instance.primary(instance.view) != instance.id {
+		// backup expected a null request, but primary never sent one
+		logger.Info("Replica %d null request timer expired, sending view change", instance.id)
+		instance.sendViewChange()
+	} else {
+		// time for the primary to send a null request
+		// pre-prepare with null digest
+		logger.Info("Primary %d null request timer expired, sending null request", instance.id)
+		instance.sendPrePrepare(nil, "")
+	}
+}
+
 // handle internal consensus messages
 func (instance *pbftCore) receive(msgPayload []byte, senderID uint64) error {
 	msg := &Message{}
@@ -578,47 +610,50 @@ func (instance *pbftCore) recvRequest(req *Request) error {
 	}
 
 	if instance.primary(instance.view) == instance.id && instance.activeView { // if we're primary of current view
-		logger.Debug("Replica %d is primary, issuing pre-prepare for request %s", instance.id, digest)
-		n := instance.seqNo + 1
-		haveOther := false
-
-		for _, cert := range instance.certStore { // check for other PRE-PREPARE for same digest, but different seqNo
-			if p := cert.prePrepare; p != nil {
-				if p.View == instance.view && p.SequenceNumber != n && p.RequestDigest == digest {
-					logger.Debug("Other pre-prepare found with same digest but different seqNo: %d instead of %d", p.SequenceNumber, n)
-					haveOther = true
-					break
-				}
-			}
-		}
-
-		// If we are the primary, have not already processed this request, and are within the first half of the log
-		if instance.inWV(instance.view, n) && !haveOther && n <= instance.h+instance.L/2 {
-			logger.Debug("Primary %d broadcasting pre-prepare for view=%d/seqNo=%d and digest %s",
-				instance.id, instance.view, n, digest)
-			instance.seqNo = n
-			preprep := &PrePrepare{
-				View:           instance.view,
-				SequenceNumber: n,
-				RequestDigest:  digest,
-				Request:        req,
-				ReplicaId:      instance.id,
-			}
-			cert := instance.getCert(instance.view, n)
-			cert.prePrepare = preprep
-			cert.digest = digest
-			instance.persistQSet()
-
-			instance.innerBroadcast(&Message{&Message_PrePrepare{preprep}})
-			return instance.maybeSendCommit(digest, instance.view, n)
-		}
-
-		logger.Debug("Replica %d is primary, not sending pre-prepare for request %s because it is out of sequence numbers", instance.id, digest)
+		instance.stopNullRequestTimer()
+		instance.sendPrePrepare(req, digest)
 	} else {
 		logger.Debug("Replica %d is backup, not sending pre-prepare for request %s", instance.id, digest)
 	}
 
 	return nil
+}
+
+func (instance *pbftCore) sendPrePrepare(req *Request, digest string) {
+	logger.Debug("Replica %d is primary, issuing pre-prepare for request %s", instance.id, digest)
+	n := instance.seqNo + 1
+
+	for _, cert := range instance.certStore { // check for other PRE-PREPARE for same digest, but different seqNo
+		if p := cert.prePrepare; p != nil {
+			if p.View == instance.view && p.SequenceNumber != n && p.RequestDigest == digest && digest != "" {
+				logger.Info("Other pre-prepare found with same digest but different seqNo: %d instead of %d", p.SequenceNumber, n)
+				return
+			}
+		}
+	}
+
+	if !instance.inWV(instance.view, n) || n > instance.h+instance.L/2 {
+		logger.Debug("Replica %d is primary, not sending pre-prepare for request %s because it is out of sequence numbers", instance.id, digest)
+		return
+	}
+
+	logger.Debug("Primary %d broadcasting pre-prepare for view=%d/seqNo=%d and digest %s",
+		instance.id, instance.view, n, digest)
+	instance.seqNo = n
+	preprep := &PrePrepare{
+		View:           instance.view,
+		SequenceNumber: n,
+		RequestDigest:  digest,
+		Request:        req,
+		ReplicaId:      instance.id,
+	}
+	cert := instance.getCert(instance.view, n)
+	cert.prePrepare = preprep
+	cert.digest = digest
+	instance.persistQSet()
+
+	instance.innerBroadcast(&Message{&Message_PrePrepare{preprep}})
+	instance.maybeSendCommit(digest, instance.view, n)
 }
 
 func (instance *pbftCore) resubmitRequests() {
@@ -678,7 +713,7 @@ func (instance *pbftCore) recvPrePrepare(preprep *PrePrepare) error {
 	cert.digest = preprep.RequestDigest
 
 	// Store the request if, for whatever reason, haven't received it from an earlier broadcast.
-	if _, ok := instance.reqStore[preprep.RequestDigest]; !ok {
+	if _, ok := instance.reqStore[preprep.RequestDigest]; !ok && preprep.RequestDigest != "" {
 		digest := hashReq(preprep.Request)
 		if digest != preprep.RequestDigest {
 			logger.Warning("Pre-prepare request and request digest do not match: request %s, digest %s",
@@ -695,6 +730,8 @@ func (instance *pbftCore) recvPrePrepare(preprep *PrePrepare) error {
 		instance.outstandingReqs[digest] = preprep.Request
 		instance.persistRequest(digest)
 	}
+
+	instance.stopNullRequestTimer()
 
 	if !instance.timerActive {
 		instance.startTimer(instance.requestTimeout, fmt.Sprintf("new pre-prepare for %s", preprep.RequestDigest))
@@ -1195,6 +1232,13 @@ func (instance *pbftCore) startTimerIfOutstandingRequests() {
 			return r
 		}()
 		instance.startTimer(instance.requestTimeout, fmt.Sprintf("outstanding requests %v", reqs))
+	} else if instance.nullRequestTimeout > 0 {
+		timeout := instance.nullRequestTimeout
+		if instance.primary(instance.view) != instance.id {
+			// we're waiting for the primary to deliver a null request - give it a bit more time
+			timeout += instance.requestTimeout
+		}
+		instance.nullRequestTimer.Reset(timeout)
 	}
 }
 
@@ -1210,4 +1254,12 @@ func (instance *pbftCore) stopTimer() {
 	instance.newViewTimer.Stop()
 	logger.Debug("Replica %d stopping a running new view timer", instance.id)
 	instance.timerActive = false
+}
+
+func (instance *pbftCore) stopNullRequestTimer() {
+	instance.nullRequestTimer.Stop()
+	select {
+	case <-instance.nullRequestTimer.C:
+	default:
+	}
 }

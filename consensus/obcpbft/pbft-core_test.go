@@ -1305,3 +1305,59 @@ func TestReplicaPersistDelete(t *testing.T) {
 		t.Error("expected no persisted entry")
 	}
 }
+
+func TestNetworkNullRequests(t *testing.T) {
+	validatorCount := 4
+	net := makePBFTNetwork(validatorCount, func(pe *pbftEndpoint) {
+		pe.pbft.nullRequestTimeout = 200 * time.Millisecond
+		pe.pbft.requestTimeout = 500 * time.Millisecond
+	})
+	defer net.stop()
+
+	msg := createOcMsgWithChainTx(1)
+	net.pbftEndpoints[0].pbft.request(msg.Payload, uint64(generateBroadcaster(validatorCount)))
+
+	go net.processContinually()
+	time.Sleep(2 * time.Second)
+
+	for _, pep := range net.pbftEndpoints {
+		if pep.sc.executions != 1 {
+			t.Errorf("Instance %d executed incorrect number of transactions: %d", pep.id, pep.sc.executions)
+		}
+		if pep.pbft.lastExec <= 1 {
+			t.Errorf("Instance %d: no null requests processed", pep.id)
+		}
+		if pep.pbft.view != 0 {
+			t.Errorf("Instance %d: expected view=0", pep.id)
+		}
+	}
+}
+
+func TestNetworkNullRequestMissing(t *testing.T) {
+	validatorCount := 4
+	net := makePBFTNetwork(validatorCount, func(pe *pbftEndpoint) {
+		pe.pbft.nullRequestTimeout = 200 * time.Millisecond
+		pe.pbft.requestTimeout = 500 * time.Millisecond
+	})
+	defer net.stop()
+
+	net.pbftEndpoints[0].pbft.nullRequestTimeout = 0
+
+	msg := createOcMsgWithChainTx(1)
+	net.pbftEndpoints[0].pbft.request(msg.Payload, uint64(generateBroadcaster(validatorCount)))
+
+	go net.processContinually()
+	time.Sleep(2 * time.Second)
+
+	for _, pep := range net.pbftEndpoints {
+		if pep.sc.executions != 1 {
+			t.Errorf("Instance %d executed incorrect number of transactions: %d", pep.id, pep.sc.executions)
+		}
+		if pep.pbft.lastExec <= 1 {
+			t.Errorf("Instance %d: no null requests processed", pep.id)
+		}
+		if pep.pbft.view != 1 {
+			t.Errorf("Instance %d: expected view=1", pep.id)
+		}
+	}
+}
