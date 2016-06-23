@@ -35,6 +35,8 @@ type broadcaster struct {
 
 	f        int
 	msgChans map[uint64]chan *sendRequest
+	msgFail  int
+	msgCount int
 	closed   sync.WaitGroup
 	closedCh chan struct{}
 }
@@ -94,6 +96,7 @@ func (b *broadcaster) drainerSend(dest uint64, send *sendRequest, successLastTim
 
 	err = b.comm.Unicast(send.msg, h)
 	if err != nil {
+		b.msgFail++
 		if successLastTime {
 			logger.Warningf("could not send to replica %d: %v", dest, err)
 		}
@@ -101,6 +104,7 @@ func (b *broadcaster) drainerSend(dest uint64, send *sendRequest, successLastTim
 		return false
 	}
 
+	b.msgCount++
 	send.done <- true
 	return true
 

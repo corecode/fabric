@@ -22,6 +22,7 @@ import (
 
 	"github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus/obcpbft/events"
+	"github.com/hyperledger/fabric/core/telemetry"
 	pb "github.com/hyperledger/fabric/protos"
 
 	"google/protobuf"
@@ -53,6 +54,13 @@ type obcBatch struct {
 	deduplicator *deduplicator
 
 	persistForward
+
+	stats struct {
+		executedBatches      int
+		executedTransactions int
+		inMessages           int
+		outMessages          int
+	}
 }
 
 type batchMessage struct {
@@ -121,6 +129,15 @@ func newObcBatch(id uint64, config *viper.Viper, stack consensus.Stack) *obcBatc
 
 	op.idleChan = make(chan struct{})
 	close(op.idleChan) // TODO remove eventually
+
+	telemetry.RegisterSeq("consensus.batch.batchstore", &op.batchStore)
+	telemetry.RegisterLen("consensus.batch.outstanding", op.reqStore.outstandingRequests)
+	telemetry.RegisterLen("consensus.batch.pending", op.reqStore.pendingRequests)
+	telemetry.RegisterInt("consensus.batch.executedBatches", &op.stats.executedBatches)
+	telemetry.RegisterInt("consensus.batch.executedTransactions", &op.stats.executedTransactions)
+	telemetry.RegisterInt("consensus.batch.inMessages", &op.stats.inMessages)
+	telemetry.RegisterInt("consensus.batch.outMessages", &op.broadcaster.msgCount)
+	telemetry.RegisterInt("consensus.batch.outMessageFails", &op.broadcaster.msgFail)
 
 	return op
 }
@@ -232,6 +249,9 @@ func (op *obcBatch) execute(seqNo uint64, raw []byte) {
 
 	logger.Debugf("Batch replica %d received exec for seqNo %d containing %d transactions", op.pbft.id, seqNo, len(txs))
 
+	op.stats.executedBatches++
+	op.stats.executedTransactions += len(txs)
+
 	op.stack.Execute(meta, txs) // This executes in the background, we will receive an executedEvent once it completes
 }
 
@@ -305,6 +325,8 @@ func (op *obcBatch) txToReq(tx []byte) *Request {
 }
 
 func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) events.Event {
+	op.stats.inMessages++
+
 	if ocMsg.Type == pb.Message_CHAIN_TRANSACTION {
 		req := op.txToReq(ocMsg.Payload)
 		return op.submitToLeader(req)
