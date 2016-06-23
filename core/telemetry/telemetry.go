@@ -16,7 +16,12 @@ limitations under the License.
 
 package telemetry
 
-import "reflect"
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"reflect"
+)
 
 type Item interface {
 	Value() int
@@ -61,7 +66,15 @@ func (c *Collector) RegisterLen(key string, l Lener) {
 }
 
 func (c *Collector) RegisterSeq(key string, seq interface{}) {
-	c.RegisterLen(key, reflect.ValueOf(seq))
+	v := reflect.ValueOf(seq)
+
+	if v.Kind() == reflect.Ptr {
+		c.RegisterFunc(key, func() int {
+			return v.Elem().Len()
+		})
+	} else {
+		c.RegisterLen(key, v)
+	}
 }
 
 type funcItem struct {
@@ -86,4 +99,47 @@ func (i intItem) Value() int {
 
 func (c *Collector) RegisterInt(key string, pi *int) {
 	c.RegisterItem(key, intItem{pi})
+}
+
+func (c *Collector) JSONValues(w http.ResponseWriter, r *http.Request) {
+	v := c.Values()
+	j, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("json marshal error: %s", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(j)
+}
+
+// package functions
+
+var DefaultTelemetry = newCollector()
+
+func RegisterItem(key string, i Item) {
+	DefaultTelemetry.RegisterItem(key, i)
+}
+
+func RegisterLen(key string, l Lener) {
+	DefaultTelemetry.RegisterLen(key, l)
+}
+
+func RegisterSeq(key string, i interface{}) {
+	DefaultTelemetry.RegisterSeq(key, i)
+}
+
+func RegisterFunc(key string, f func() int) {
+	DefaultTelemetry.RegisterFunc(key, f)
+}
+
+func RegisterInt(key string, pi *int) {
+	DefaultTelemetry.RegisterInt(key, pi)
+}
+
+func Init(prefix string, mux *http.ServeMux) {
+	if mux == nil {
+		mux = http.DefaultServeMux
+	}
+
+	mux.Handle(prefix+"/telemetry.json", http.HandlerFunc(DefaultTelemetry.JSONValues))
 }
