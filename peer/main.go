@@ -56,6 +56,7 @@ import (
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/rest"
 	"github.com/hyperledger/fabric/core/system_chaincode"
+	"github.com/hyperledger/fabric/core/telemetry"
 	"github.com/hyperledger/fabric/events/producer"
 	pb "github.com/hyperledger/fabric/protos"
 )
@@ -546,6 +547,7 @@ func serve(args []string) error {
 				logger.Errorf("Error starting profiler: %s", profileErr)
 			}
 		}()
+		telemetry.Init("/telemetry", nil)
 	}
 
 	// Block until grpc server exits
