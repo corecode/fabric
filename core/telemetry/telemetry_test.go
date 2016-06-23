@@ -83,8 +83,27 @@ func TestSeqLen(t *testing.T) {
 	sl := make(map[int]struct{})
 	sl[1] = struct{}{}
 	c := newCollector()
-	c.RegisterSeq("i", sl)
+	c.RegisterSeq("i", &sl)
+	sl = make(map[int]struct{})
+	sl[1] = struct{}{}
 	sl[2] = struct{}{}
+	r := c.Values()
+	if len(r) != 1 {
+		t.Fatalf("should have one item")
+	}
+	if _, ok := r["i"]; !ok {
+		t.Fatalf("should have i")
+	}
+	if r["i"] != 2 {
+		t.Errorf("wrong value")
+	}
+}
+
+func TestSliceLen(t *testing.T) {
+	sl := testSlice{struct{}{}}
+	c := newCollector()
+	c.RegisterSeq("i", &sl)
+	sl = append(sl, struct{}{})
 	r := c.Values()
 	if len(r) != 1 {
 		t.Fatalf("should have one item")
