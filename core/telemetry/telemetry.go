@@ -21,7 +21,14 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/op/go-logging"
 )
+
+var logger = logging.MustGetLogger("telemetry")
 
 type Item interface {
 	Value() int
@@ -142,4 +149,30 @@ func Init(prefix string, mux *http.ServeMux) {
 	}
 
 	mux.Handle(prefix+"/telemetry.json", http.HandlerFunc(DefaultTelemetry.JSONValues))
+}
+
+func logReport() {
+	var lastVal map[string]int
+	for {
+		time.Sleep(1 * time.Second)
+		if logger.IsEnabledFor(logging.INFO) {
+			vals := DefaultTelemetry.Values()
+
+			if reflect.DeepEqual(lastVal, vals) {
+				continue
+			}
+
+			s := []string{"New telemetry values"}
+			for k, v := range vals {
+				s = append(s, fmt.Sprintf("%s\t%d", k, v))
+			}
+			sort.Sort(sort.StringSlice(s))
+			logger.Info(strings.Join(s, "\n"))
+			lastVal = vals
+		}
+	}
+}
+
+func init() {
+	go logReport()
 }
