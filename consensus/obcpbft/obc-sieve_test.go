@@ -46,14 +46,14 @@ func TestSieveNetwork(t *testing.T) {
 
 	net.debug = true
 
-	req1 := createOcMsgWithChainTx(1)
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(req1, net.endpoints[generateBroadcaster(validatorCount)].getHandle())
+	req1 := createChainTx(1)
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(req1)
 	net.process()
-	req0 := createOcMsgWithChainTx(2)
-	net.endpoints[0].(*consumerEndpoint).consumer.RecvMsg(req0, net.endpoints[generateBroadcaster(validatorCount)].getHandle())
+	req0 := createChainTx(2)
+	net.endpoints[0].(*consumerEndpoint).consumer.RecvRequest(req0)
 	net.process()
 
-	testblock := func(ep endpoint, blockNo uint64, msg *pb.Message) {
+	testblock := func(ep endpoint, blockNo uint64, tx *pb.Transaction) {
 		cep := ep.(*consumerEndpoint)
 		block, err := cep.consumer.(*obcSieve).stack.GetBlock(blockNo)
 		if err != nil {
@@ -67,10 +67,8 @@ func TestSieveNetwork(t *testing.T) {
 			t.Fatalf("Replica %d block %v has %d txResults, expected 1", cep.id, blockNo, numTxResults)
 		}
 
-		msgTx := &pb.Transaction{}
-		proto.Unmarshal(msg.Payload, msgTx)
-		if !reflect.DeepEqual(txs[0], msgTx) {
-			t.Errorf("Replica %d transaction does not match; is %+v, should be %+v", cep.id, txs[0], msgTx)
+		if !reflect.DeepEqual(txs[0], tx) {
+			t.Errorf("Replica %d transaction does not match; is %+v, should be %+v", cep.id, txs[0], tx)
 		}
 	}
 
@@ -118,12 +116,11 @@ func TestSieveNoDecision(t *testing.T) {
 
 	fmt.Printf("DEBUG: filterFn is %p and net is %p\n", net.testnet.filterFn, net.testnet)
 
-	broadcaster := net.endpoints[generateBroadcaster(validatorCount)].getHandle()
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(1), broadcaster)
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(1))
 
 	go net.processContinually()
 	time.Sleep(2 * time.Second)
-	net.endpoints[3].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(2), broadcaster)
+	net.endpoints[3].(*consumerEndpoint).consumer.RecvRequest(createChainTx(2))
 	time.Sleep(5 * time.Second)
 	net.stop()
 
@@ -170,8 +167,8 @@ func TestSieveReqBackToBack(t *testing.T) {
 		return payload
 	}
 
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(1), net.endpoints[generateBroadcaster(validatorCount)].getHandle())
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(2), net.endpoints[generateBroadcaster(validatorCount)].getHandle())
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(1))
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(2))
 
 	net.process()
 
@@ -204,11 +201,11 @@ func TestSieveNonDeterministic(t *testing.T) {
 	defer net.stop()
 
 	instResults = []int{1, 2, 3, 4}
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(1), net.endpoints[generateBroadcaster(validatorCount)].getHandle())
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(1))
 	net.process()
 
 	instResults = []int{5, 5, 6, 6}
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(2), net.endpoints[generateBroadcaster(validatorCount)].getHandle())
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(2))
 
 	net.process()
 
@@ -235,14 +232,9 @@ func TestSieveRequestHash(t *testing.T) {
 	defer net.stop()
 
 	tx := &pb.Transaction{Type: pb.Transaction_CHAINCODE_DEPLOY, Payload: make([]byte, 1000)}
-	txPacked, _ := proto.Marshal(tx)
-	msg := &pb.Message{
-		Type:    pb.Message_CHAIN_TRANSACTION,
-		Payload: txPacked,
-	}
 
 	r0 := net.endpoints[0].(*consumerEndpoint)
-	r0.consumer.RecvMsg(msg, r0.getHandle())
+	r0.consumer.RecvRequest(tx)
 
 	// This used to be enormous, verify that it is short
 	txID := fmt.Sprintf("%v", net.mockLedgers[0].txID)
@@ -268,7 +260,7 @@ func TestSieveCustody(t *testing.T) {
 
 	go net.processContinually()
 	r2 := net.endpoints[2].(*consumerEndpoint).consumer
-	r2.RecvMsg(createOcMsgWithChainTx(1), net.endpoints[1].getHandle())
+	r2.RecvRequest(createChainTx(1))
 	time.Sleep(6 * time.Second)
 	net.stop()
 

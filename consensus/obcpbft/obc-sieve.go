@@ -57,6 +57,7 @@ type obcSieve struct {
 
 	executeChan      chan *pbftExecute       // Written to by a go routine from PBFT execute method
 	incomingChan     chan *msgWithSender     // Written to by RecvMsg
+	transactionChan  chan *pb.Transaction    // Written to by RecvRequest
 	custodyTimerChan chan custodyInfo        // Written to by Complaint
 	stateUpdatedChan chan *checkpointMessage // Written to by StateUpdate
 	idleChan         chan struct{}           // Used for detecting thread idleness for testing
@@ -98,6 +99,7 @@ func newObcSieve(id uint64, config *viper.Viper, stack consensus.Stack) *obcSiev
 	op.incomingChan = make(chan *msgWithSender)
 	op.custodyTimerChan = make(chan custodyInfo)
 	op.stateUpdatedChan = make(chan *checkpointMessage)
+	op.transactionChan = make(chan *pb.Transaction)
 
 	op.idleChan = make(chan struct{})
 
@@ -115,10 +117,6 @@ func (op *obcSieve) moreCorrectThanByzantineQuorum() int {
 
 // recvMsg is the internal handler for messages which come in through RecvMsg
 func (op *obcSieve) recvMsg(ocMsg *pb.Message, senderHandle *pb.PeerID) error {
-	if ocMsg.Type == pb.Message_CHAIN_TRANSACTION {
-		return op.request(ocMsg.Payload)
-	}
-
 	if ocMsg.Type == pb.Message_CONSENSUS {
 		senderID, err := getValidatorID(senderHandle)
 		if err != nil {
@@ -139,14 +137,18 @@ func (op *obcSieve) recvMsg(ocMsg *pb.Message, senderHandle *pb.PeerID) error {
 	return fmt.Errorf("Unexpected message type: %s", ocMsg.Type)
 }
 
-func (op *obcSieve) request(tx []byte) error {
+func (op *obcSieve) request(tx *pb.Transaction) error {
+	txRaw, err := proto.Marshal(tx)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	req := &Request{
 		Timestamp: &google_protobuf.Timestamp{
 			Seconds: now.Unix(),
 			Nanos:   int32(now.UnixNano() % 1000000000),
 		},
-		Payload:   tx,
+		Payload:   txRaw,
 		ReplicaId: op.id,
 	}
 	// XXX sign req
@@ -207,6 +209,11 @@ func (op *obcSieve) RecvMsg(ocMsg *pb.Message, senderHandle *pb.PeerID) error {
 		sender: senderHandle,
 	}
 
+	return nil
+}
+
+func (op *obcSieve) RecvRequest(tx *pb.Transaction) error {
+	op.transactionChan <- tx
 	return nil
 }
 
@@ -616,6 +623,9 @@ func (op *obcSieve) main() {
 			if err := op.recvMsg(msgWithSender.msg, msgWithSender.sender); nil != err {
 				logger.Errorf("Could not process message: %v", err)
 			}
+
+		case tx := <-op.transactionChan:
+			op.request(tx)
 
 		case exec := <-op.executeChan:
 			op.executeImpl(exec.seqNo, exec.txRaw)

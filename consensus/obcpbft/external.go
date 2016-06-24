@@ -50,6 +50,9 @@ type committedEvent struct {
 // rolledBackEvent is sent when a requested rollback completes
 type rolledBackEvent struct{}
 
+// transactionEvent is sent when a new local transaction is enqueued
+type transactionEvent *pb.Transaction
+
 type externalEventReceiver struct {
 	manager events.Manager
 }
@@ -60,6 +63,11 @@ func (eer *externalEventReceiver) RecvMsg(ocMsg *pb.Message, senderHandle *pb.Pe
 		msg:    ocMsg,
 		sender: senderHandle,
 	}
+	return nil
+}
+
+func (eer *externalEventReceiver) RecvRequest(tx *pb.Transaction) error {
+	eer.manager.Queue() <- transactionEvent(tx)
 	return nil
 }
 

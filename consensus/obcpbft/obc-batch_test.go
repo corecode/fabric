@@ -45,12 +45,11 @@ func TestNetworkBatch(t *testing.T) {
 	})
 	defer net.stop()
 
-	broadcaster := net.endpoints[generateBroadcaster(validatorCount)].getHandle()
-	err := net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(1), broadcaster)
+	err := net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(1))
 	if err != nil {
 		t.Errorf("External request was not processed by backup: %v", err)
 	}
-	err = net.endpoints[2].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(2), broadcaster)
+	err = net.endpoints[2].(*consumerEndpoint).consumer.RecvRequest(createChainTx(2))
 	if err != nil {
 		t.Fatalf("External request was not processed by backup: %v", err)
 	}
@@ -120,7 +119,7 @@ func TestOutstandingReqsIngestion(t *testing.T) {
 		}
 	}
 
-	err := bs[1].RecvMsg(createOcMsgWithChainTx(1), &pb.PeerID{Name: "vp1"})
+	err := bs[1].RecvRequest(createChainTx(1))
 	if err != nil {
 		t.Fatalf("External request was not processed by backup: %v", err)
 	}
@@ -250,7 +249,7 @@ func TestViewChangeOnPrimarySilence(t *testing.T) {
 	defer b.Close()
 
 	// Send a request, which will be ignored, triggering view change
-	b.manager.Queue() <- batchMessageEvent{createOcMsgWithChainTx(1), &pb.PeerID{Name: "vp0"}}
+	b.manager.Queue() <- transactionEvent{createChainTx(1), 1}
 	time.Sleep(time.Second)
 	b.manager.Queue() <- nil
 
@@ -283,14 +282,13 @@ func TestClassicStateTransfer(t *testing.T) {
 	}
 
 	// Advance the network one seqNo past so that Replica 3 will have to do statetransfer
-	broadcaster := net.endpoints[generateBroadcaster(validatorCount)].getHandle()
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(1), broadcaster)
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(1))
 	net.process()
 
 	// Move the seqNo to 9, at seqNo 6, Replica 3 will realize it's behind, transfer to seqNo 8, then execute seqNo 9
 	filterMsg = false
 	for n := 2; n <= 9; n++ {
-		net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(int64(n)), broadcaster)
+		net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(int64(n)))
 	}
 
 	net.process()
@@ -327,8 +325,7 @@ func TestClassicBackToBackStateTransfer(t *testing.T) {
 	}
 
 	// Get the group to advance past seqNo 1, leaving Replica 3 behind
-	broadcaster := net.endpoints[generateBroadcaster(validatorCount)].getHandle()
-	net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(1), broadcaster)
+	net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(1))
 	net.process()
 
 	// Now start including Replica 3, go to sequence number 10, Replica 3 will trigger state transfer
@@ -337,7 +334,7 @@ func TestClassicBackToBackStateTransfer(t *testing.T) {
 	// Replica 3 will execute through seqNo 12
 	filterMsg = false
 	for n := 2; n <= 21; n++ {
-		net.endpoints[1].(*consumerEndpoint).consumer.RecvMsg(createOcMsgWithChainTx(int64(n)), broadcaster)
+		net.endpoints[1].(*consumerEndpoint).consumer.RecvRequest(createChainTx(int64(n)))
 	}
 
 	net.process()

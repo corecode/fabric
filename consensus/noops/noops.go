@@ -100,15 +100,17 @@ func (i *Noops) RecvMsg(msg *pb.Message, senderHandle *pb.PeerID) error {
 		}
 	}
 	if msg.Type == pb.Message_CONSENSUS {
-		tx, err := i.getTxFromMsg(msg)
-		if nil != err {
-			return err
-		}
-		if logger.IsEnabledFor(logging.DEBUG) {
-			logger.Debugf("Sending to channel tx uuid: %s", tx.Uuid)
-		}
-		i.channel <- tx
+		panic("invalid message type")
 	}
+	return nil
+}
+
+// RequestChan returns a channel to enqueue new transactions
+func (i *Noops) RecvRequest(tx *pb.Transaction) error {
+	if logger.IsEnabledFor(logging.DEBUG) {
+		logger.Debugf("Sending to channel tx uuid: %s", tx.Uuid)
+	}
+	i.channel <- tx
 	return nil
 }
 

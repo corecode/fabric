@@ -44,7 +44,7 @@ func (eng *EngineImpl) GetHandlerFactory() peer.HandlerFactory {
 }
 
 // ProcessTransactionMsg processes a Message in context of a Transaction
-func (eng *EngineImpl) ProcessTransactionMsg(msg *pb.Message, tx *pb.Transaction) (response *pb.Response) {
+func (eng *EngineImpl) ProcessTransactionMsg(tx *pb.Transaction) (response *pb.Response) {
 	//TODO: Do we always verify security, or can we supply a flag on the invoke ot this functions so to bypass check for locally generated transactions?
 	if tx.Type == pb.Transaction_CHAINCODE_QUERY {
 		if !engine.helper.valid {
@@ -79,13 +79,10 @@ func (eng *EngineImpl) ProcessTransactionMsg(msg *pb.Message, tx *pb.Transaction
 		if eng.consenter == nil {
 			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("Engine not initialized")}
 		}
-		// TODO, do we want to put these requests into a queue? This will block until
+		// TODO, This will block until
 		// the consenter gets around to handling the message, but it also provides some
 		// natural feedback to the REST API to determine how long it takes to queue messages
-		err := eng.consenter.RecvMsg(msg, eng.peerEndpoint.ID)
-		if err != nil {
-			response = &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}
-		}
+		eng.consenter.RecvRequest(tx)
 	}
 	return response
 }

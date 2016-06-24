@@ -32,6 +32,7 @@ type ExecutionConsumer interface {
 // Every consensus plugin needs to implement this interface
 type Consenter interface {
 	RecvMsg(msg *pb.Message, senderHandle *pb.PeerID) error // Called serially with incoming messages from gRPC
+	RecvRequest(tx *pb.Transaction) error                   // Submit new transactions originating on this peer
 	ExecutionConsumer
 }
 
