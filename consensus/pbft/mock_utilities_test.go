@@ -119,6 +119,17 @@ func createOcMsgWithChainTx(iter int64) (msg *pb.Message) {
 	return
 }
 
+// Create a new transaction
+func createChainTx(iter int64) (tx *pb.Transaction) {
+	txTime := &gp.Timestamp{Seconds: iter, Nanos: 0}
+	tx = &pb.Transaction{Type: pb.Transaction_CHAINCODE_DEPLOY,
+		Timestamp: txTime,
+		Uuid:      fmt.Sprint(iter),
+		Payload:   []byte(fmt.Sprint(iter)),
+	}
+	return
+}
+
 // Create a message of type `Message_CHAIN_TRANSACTION`
 func createPbftRequestWithChainTx(iter int64, replica uint64) (msg *Request) {
 	txTime := &gp.Timestamp{Seconds: iter, Nanos: 0}

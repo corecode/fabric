@@ -197,7 +197,7 @@ type PeerImpl struct {
 
 // TransactionProccesor responsible for processing of Transactions
 type TransactionProccesor interface {
-	ProcessTransactionMsg(*pb.Message, *pb.Transaction) *pb.Response
+	ProcessTransactionMsg(*pb.Transaction) *pb.Response
 }
 
 // Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
@@ -501,19 +501,7 @@ func (p *PeerImpl) SendTransactionsToPeer(peerAddress string, transaction *pb.Tr
 
 // sendTransactionsToLocalEngine send the transaction to the local engine (This Peer is a validator)
 func (p *PeerImpl) sendTransactionsToLocalEngine(transaction *pb.Transaction) *pb.Response {
-
-	peerLogger.Debugf("Marshalling transaction %s to send to local engine", transaction.Type)
-	data, err := proto.Marshal(transaction)
-	if err != nil {
-		return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(fmt.Sprintf("Error sending transaction to local engine: %s", err))}
-	}
-
-	var response *pb.Response
-	msg := &pb.Message{Type: pb.Message_CHAIN_TRANSACTION, Payload: data, Timestamp: util.CreateUtcTimestamp()}
-	peerLogger.Debugf("Sending message %s with timestamp %v to local engine", msg.Type, msg.Timestamp)
-	response = p.engine.ProcessTransactionMsg(msg, transaction)
-
-	return response
+	return p.engine.ProcessTransactionMsg(transaction)
 }
 
 func (p *PeerImpl) ensureConnected() {

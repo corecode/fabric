@@ -310,14 +310,19 @@ func (op *obcBatch) sendBatch() events.Event {
 	}
 }
 
-func (op *obcBatch) txToReq(tx []byte) *Request {
+func (op *obcBatch) txToReq(tx *pb.Transaction) *Request {
+	txRaw, err := proto.Marshal(tx)
+	if err != nil {
+		logger.Warningf("could not marshal transaction: %s", err)
+		return nil
+	}
 	now := time.Now()
 	req := &Request{
 		Timestamp: &google_protobuf.Timestamp{
 			Seconds: now.Unix(),
 			Nanos:   int32(now.UnixNano() % 1000000000),
 		},
-		Payload:   tx,
+		Payload:   txRaw,
 		ReplicaId: op.pbft.id,
 	}
 	// XXX sign req
@@ -326,11 +331,6 @@ func (op *obcBatch) txToReq(tx []byte) *Request {
 
 func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) events.Event {
 	op.stats.inMessages++
-
-	if ocMsg.Type == pb.Message_CHAIN_TRANSACTION {
-		req := op.txToReq(ocMsg.Payload)
-		return op.submitToLeader(req)
-	}
 
 	if ocMsg.Type != pb.Message_CONSENSUS {
 		logger.Errorf("Unexpected message type: %s", ocMsg.Type)
@@ -427,6 +427,11 @@ func (op *obcBatch) ProcessEvent(event events.Event) events.Event {
 	case committedEvent:
 		logger.Debugf("Replica %d received committedEvent", op.pbft.id)
 		return execDoneEvent{}
+	case transactionEvent:
+		req := op.txToReq((*pb.Transaction)(et))
+		if req != nil {
+			return op.submitToLeader(req)
+		}
 	case execDoneEvent:
 		if res := op.pbft.ProcessEvent(event); res != nil {
 			// This may trigger a view change, if so, process it, we will resubmit on new view
