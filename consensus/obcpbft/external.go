@@ -51,10 +51,14 @@ type committedEvent struct {
 type rolledBackEvent struct{}
 
 // transactionEvent is sent when a new local transaction is enqueued
-type transactionEvent *pb.Transaction
+type transactionEvent struct {
+	tx *pb.Transaction
+	id int
+}
 
 type externalEventReceiver struct {
-	manager events.Manager
+	manager  events.Manager
+	reqQueue *reqQueue
 }
 
 // RecvMsg is called by the stack when a new message is received
@@ -67,7 +71,12 @@ func (eer *externalEventReceiver) RecvMsg(ocMsg *pb.Message, senderHandle *pb.Pe
 }
 
 func (eer *externalEventReceiver) RecvRequest(tx *pb.Transaction) error {
-	eer.manager.Queue() <- transactionEvent(tx)
+	// Register blocks until there is a free id available
+	id, err := eer.reqQueue.Register(tx)
+	if err != nil {
+		return err
+	}
+	eer.manager.Queue() <- transactionEvent{tx, id}
 	return nil
 }
 

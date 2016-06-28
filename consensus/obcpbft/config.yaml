@@ -40,6 +40,9 @@ general:
     # After how many checkpoint periods the primary gets cycled automatically.  Set to 0 to disable.
     viewchangeperiod: 0
 
+    # How many concurrent transactions a single replica can have outstanding.
+    outstanding: 10
+
     # Timeouts
     timeout:
 
