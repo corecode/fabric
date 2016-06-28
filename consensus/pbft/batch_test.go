@@ -258,6 +258,7 @@ func TestViewChangeOnPrimarySilence(t *testing.T) {
 func obcBatchSizeOneHelper(id uint64, config *viper.Viper, stack consensus.Stack) pbftConsumer {
 	// It's not entirely obvious why the compiler likes the parent function, but not newObcClassic directly
 	config.Set("general.batchsize", 1)
+	config.Set("general.outstanding", 100)
 	return newObcBatch(id, config, stack)
 }
 

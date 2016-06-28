@@ -106,6 +106,8 @@ func newObcBatch(id uint64, config *viper.Viper, stack consensus.Stack) *obcBatc
 	if err != nil {
 		panic(fmt.Errorf("Cannot parse batch timeout: %s", err))
 	}
+	outstandingSize := config.GetInt("general.outstanding")
+	logger.Infof("PBFT Batch outstanding requests = %d", outstandingSize)
 	logger.Infof("PBFT Batch size = %d", op.batchSize)
 	logger.Infof("PBFT Batch timeout = %v", op.batchTimeout)
 
@@ -118,6 +120,8 @@ func newObcBatch(id uint64, config *viper.Viper, stack consensus.Stack) *obcBatc
 		op.pbft.nullRequestTimeout = 3 * op.pbft.requestTimeout / 2
 		logger.Warningf("Configured null request timeout must be greater than request timeout, setting to %v", op.pbft.nullRequestTimeout)
 	}
+
+	op.externalEventReceiver.reqQueue = newReqQueue(outstandingSize)
 
 	op.incomingChan = make(chan *batchMessage)
 
@@ -138,6 +142,7 @@ func newObcBatch(id uint64, config *viper.Viper, stack consensus.Stack) *obcBatc
 	telemetry.RegisterInt("consensus.batch.inMessages", &op.stats.inMessages)
 	telemetry.RegisterInt("consensus.batch.outMessages", &op.broadcaster.msgCount)
 	telemetry.RegisterInt("consensus.batch.outMessageFails", &op.broadcaster.msgFail)
+	telemetry.RegisterSeq("consensus.outstandingtx", &op.externalEventReceiver.reqQueue.outstanding)
 
 	return op
 }
@@ -243,6 +248,7 @@ func (op *obcBatch) execute(seqNo uint64, raw []byte) {
 		txs = append(txs, tx)
 
 		op.deduplicator.Execute(req)
+		op.externalEventReceiver.reqQueue.Done(tx)
 	}
 
 	meta, _ := proto.Marshal(&Metadata{seqNo})
@@ -333,8 +339,7 @@ func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) e
 	op.stats.inMessages++
 
 	if ocMsg.Type != pb.Message_CONSENSUS {
-		logger.Errorf("Unexpected message type: %s", ocMsg.Type)
-		return nil
+		panic(fmt.Errorf("Unexpected message type: %s", ocMsg.Type))
 	}
 
 	batchMsg := &BatchMessage{}
@@ -428,7 +433,7 @@ func (op *obcBatch) ProcessEvent(event events.Event) events.Event {
 		logger.Debugf("Replica %d received committedEvent", op.pbft.id)
 		return execDoneEvent{}
 	case transactionEvent:
-		req := op.txToReq((*pb.Transaction)(et))
+		req := op.txToReq(et.tx)
 		if req != nil {
 			return op.submitToLeader(req)
 		}
@@ -499,6 +504,7 @@ func (op *obcBatch) ProcessEvent(event events.Event) events.Event {
 	case stateUpdatedEvent:
 		// When the state is updated, clear any outstanding requests, they may have been processed while we were gone
 		op.reqStore = newRequestStore()
+		op.externalEventReceiver.reqQueue.Clear()
 		return op.pbft.ProcessEvent(event)
 	default:
 		return op.pbft.ProcessEvent(event)
