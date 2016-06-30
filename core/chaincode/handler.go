@@ -19,6 +19,7 @@ package chaincode
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 	"time"
 
@@ -1480,7 +1481,22 @@ func (handler *Handler) sendExecuteMessage(msg *pb.ChaincodeMessage, tx *pb.Tran
 	// Trigger FSM event if it is a transaction
 	if msg.Type.String() == pb.ChaincodeMessage_TRANSACTION.String() {
 		chaincodeLogger.Debugf("[%s]sendExecuteMsg trigger event %s", shortuuid(msg.Uuid), msg.Type)
-		handler.triggerNextState(msg, true)
+		//handler.triggerNextState(msg, true)
+		go func() {
+			ledgerObj, _ := ledger.GetLedger()
+			chaincodeID := handler.ChaincodeID.Name
+			astr, _ := ledgerObj.GetState(chaincodeID, "a", false)
+			bstr, _ := ledgerObj.GetState(chaincodeID, "b", false)
+			aval, _ := strconv.Atoi(string(astr))
+			bval, _ := strconv.Atoi(string(bstr))
+			aval += 1
+			bval -= 1
+			astr = []byte(strconv.Itoa(aval))
+			bstr = []byte(strconv.Itoa(bval))
+			ledgerObj.SetState(chaincodeID, "a", astr)
+			ledgerObj.SetState(chaincodeID, "b", bstr)
+			txctx.responseNotifier <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_COMPLETED}
+		}()
 	} else {
 		// Send the message to shim
 		chaincodeLogger.Debugf("[%s]sending query", shortuuid(msg.Uuid))
