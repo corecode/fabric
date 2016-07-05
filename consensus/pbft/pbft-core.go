@@ -26,7 +26,6 @@ import (
 
 	"github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus/util/events"
-	_ "github.com/hyperledger/fabric/core" // Needed for logging format init
 
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
