@@ -19,6 +19,7 @@ package pbft
 import (
 	"encoding/base64"
 	"fmt"
+	"strconv"
 
 	"github.com/golang/protobuf/proto"
 )
@@ -100,6 +101,34 @@ func (instance *pbftCore) persistDelCheckpoint(seqNo uint64) {
 	instance.consumer.DelState(key)
 }
 
+func (instance *pbftCore) persistLastSeqNo(seqNo uint64) {
+	seqStr := fmt.Sprintf("%d", seqNo)
+	instance.consumer.StoreState("lastExec", []byte(seqStr))
+}
+
+func (instance *pbftCore) restoreLastSeqNo() {
+	raw, err := instance.consumer.ReadState("lastExec")
+	var n, n2 uint64
+
+	if err == nil {
+		n, err = strconv.ParseUint(string(raw), 10, 64)
+	}
+	if err != nil {
+		logger.Debugf("Replica %d could not restore lastExec: %s", instance.id, err)
+	}
+
+	if n2, err = instance.consumer.getLastSeqNo(); err != nil {
+		logger.Warningf("Replica %d could not restore lastExec: %s", instance.id, err)
+	}
+
+	if n > n2 {
+		instance.lastExec = n
+	} else {
+		instance.lastExec = n2
+	}
+	logger.Infof("Replica %d restored lastExec: %d", instance.id, instance.lastExec)
+}
+
 func (instance *pbftCore) restoreState() {
 	updateSeqView := func(set []*ViewChange_PQ) {
 		for _, e := range set {
@@ -164,13 +193,4 @@ func (instance *pbftCore) restoreState() {
 
 	logger.Infof("Replica %d restored state: view: %d, seqNo: %d, pset: %d, qset: %d, reqs: %d, chkpts: %d",
 		instance.id, instance.view, instance.seqNo, len(instance.pset), len(instance.qset), len(instance.reqStore), len(instance.chkpts))
-}
-
-func (instance *pbftCore) restoreLastSeqNo() {
-	var err error
-	if instance.lastExec, err = instance.consumer.getLastSeqNo(); err != nil {
-		logger.Warningf("Replica %d could not restore lastExec: %s", instance.id, err)
-		instance.lastExec = 0
-	}
-	logger.Infof("Replica %d restored lastExec: %d", instance.id, instance.lastExec)
 }
