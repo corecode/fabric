@@ -17,122 +17,79 @@ limitations under the License.
 package connection
 
 import (
-	"sync"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
+	"net"
 
-	"github.com/hyperledger/fabric/consensus"
-	pb "github.com/hyperledger/fabric/protos"
-
-	"golang.org/x/net/context"
-
-	google_protobuf "google/protobuf"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
-type Conn struct {
-	consensus consensus.Consenter
-	queueSize int
-
-	lock    sync.Mutex
-	deliver map[chan *Block]struct{}
-
-	executed *Block
+type PeerInfo struct {
+	addr string
+	cert *x509.Certificate
+	cp   *x509.CertPool
 }
 
-type clientConn Conn
+type Manager struct {
+	Server    *grpc.Server
+	Listener  net.Listener
+	Self      PeerInfo
+	tlsConfig tls.Config
+}
 
-func New(queueSize int) *Conn {
-	return &Conn{
-		queueSize: queueSize,
-		executed:  &Block{},
+func New(addr string, certFile string, keyFile string) (_ *Manager, err error) {
+	c := &Manager{}
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
 	}
-}
 
-func (c *Conn) RegisterConsensus(consensus consensus.Consenter) {
-	c.consensus = consensus
-}
+	c.Self, err = NewPeerInfo("", cert.Certificate[0])
 
-// gRPC atomic_broadcast interface
-func (c *clientConn) Broadcast(ctx context.Context, msg *Message) (*google_protobuf.Empty, error) {
-	// XXX check ctx tls credentials for permission to broadcast
-	c.consensus.RecvRequest(&pb.Transaction{Payload: msg.Data})
-	return nil, nil
-}
-
-func (c *clientConn) Deliver(_ *google_protobuf.Empty, srv AtomicBroadcast_DeliverServer) error {
-	// XXX check src tls credentials for permission to subscribe
-	ch := make(chan *Block, c.queueSize)
-	c.lock.Lock()
-	c.deliver[ch] = struct{}{}
-	c.lock.Unlock()
-	for msg := range ch {
-		srv.Send(msg)
+	c.tlsConfig = tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequestClientCert,
 	}
-	return nil
-}
 
-// consensus.Executor interface
-func (c *Conn) Start() {
-	panic("not implemented")
-}
-
-func (c *Conn) Halt() {
-	panic("not implemented")
-}
-
-func (c *Conn) Execute(tag interface{}, txs []*pb.Transaction) {
-	msgs := make([]*Message, len(txs))
-	for i, tx := range txs {
-		msgs[i] = &Message{Data: tx.Payload}
+	c.Listener, err = net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
 	}
-	c.executed.Messages = append(c.executed.Messages, msgs...)
+
+	serverTls := c.tlsConfig
+	serverTls.ServerName = addr
+	c.Server = grpc.NewServer(grpc.Creds(credentials.NewTLS(&serverTls)))
+	go c.Server.Serve(c.Listener)
+	return c, nil
 }
 
-func (c *Conn) Commit(tag interface{}, metadata []byte) {
-	b := c.executed
-	c.executed = &Block{}
+func (c *Manager) DialPeer(peer PeerInfo, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
+	clientTls := c.tlsConfig
+	clientTls.RootCAs = peer.cp
+	clientTls.ServerName = peer.addr
+	opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&clientTls)))
+	return grpc.Dial(peer.addr, opts...)
+}
 
-	c.lock.Lock()
-	out := c.deliver
-	c.lock.Unlock()
+// to check client: credentials.FromContext() -> AuthInfo
 
-	for ch := range out {
-		select {
-		case ch <- b:
-			break
-		default:
-			// ch is full, disconnect
-			c.lock.Lock()
-			delete(c.deliver, ch)
-			c.lock.Unlock()
-			close(ch)
-		}
+func NewPeerInfo(addr string, cert []byte) (_ PeerInfo, err error) {
+	var p PeerInfo
+
+	p.addr = addr
+	p.cert, err = x509.ParseCertificate(cert)
+	if err != nil {
+		return
 	}
+	p.cp = x509.NewCertPool()
+	p.cp.AddCert(p.cert)
+	return p, nil
 }
 
-func (c *Conn) Rollback(tag interface{}) {
-	c.executed = &Block{}
-}
-
-func (c *Conn) UpdateState(tag interface{}, target *pb.BlockchainInfo, peers []*pb.PeerID) {
-	panic("not implemented")
-}
-
-//
-func (c *Conn) BeginTxBatch(id interface{}) error {
-	panic("not implemented")
-}
-
-func (c *Conn) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) {
-	panic("not implemented")
-}
-
-func (c *Conn) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, error) {
-	panic("not implemented")
-}
-
-func (c *Conn) RollbackTxBatch(id interface{}) error {
-	panic("not implemented")
-}
-
-func (c *Conn) PreviewCommitTxBatch(id interface{}, metadata []byte) ([]byte, error) {
-	panic("not implemented")
+func (pi PeerInfo) Fingerprint() string {
+	return fmt.Sprintf("%x", sha256.Sum256(pi.cert.Raw))
 }

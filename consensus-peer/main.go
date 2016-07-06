@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/hyperledger/fabric/consensus-peer/client"
 	"github.com/hyperledger/fabric/consensus-peer/connection"
 	"github.com/hyperledger/fabric/consensus-peer/consensus"
 	"github.com/hyperledger/fabric/consensus-peer/persist"
@@ -29,7 +30,7 @@ import (
 
 type consensusStack struct {
 	*persist.Persist
-	*connection.Conn
+	*client.Client
 	*consensus.Consensus
 }
 
@@ -74,11 +75,19 @@ func (c *consensusStack) GetBlockHeadMetadata() ([]byte, error) {
 
 //
 func main() {
-	s := &consensusStack{
-		Persist:   persist.New("data"),
-		Conn:      connection.New(100),
-		Consensus: consensus.New(consensus.PeerInfo{}, nil),
+	conn, err := connection.New(":6100", "cert.pem", "key.pem")
+	if err != nil {
+		panic(err)
 	}
+	s := &consensusStack{
+		Persist: persist.New("data"),
+		Client:  client.New(100, conn),
+	}
+	s.Consensus, err = consensus.New(s.Persist, conn)
+	if err != nil {
+		panic(err)
+	}
+
 	s.RegisterConsenter(pbft.New(s))
 	for {
 	}

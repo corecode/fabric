@@ -20,38 +20,95 @@ import (
 	"fmt"
 	"google/protobuf"
 	"io"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/net/context"
 
 	"github.com/hyperledger/fabric/consensus"
+	"github.com/hyperledger/fabric/consensus-peer/connection"
+	"github.com/hyperledger/fabric/consensus-peer/persist"
 	pb "github.com/hyperledger/fabric/protos"
-
-	"google.golang.org/grpc"
+	"github.com/op/go-logging"
 )
+
+var logger = logging.MustGetLogger("consensus")
 
 type Consensus struct {
 	consensus consensus.Consenter
+	persist   *persist.Persist
+	conn      *connection.Manager
 
 	lock  sync.Mutex
 	peers map[pb.PeerID]chan<- *pb.Message
 
-	self     PeerInfo
-	peerInfo []PeerInfo
+	self     *PeerInfo
+	peerInfo []*PeerInfo
 }
 
 type consensusConn Consensus
 
 type PeerInfo struct {
-	pb.PeerID
+	info connection.PeerInfo
+	sort string
+	id   pb.PeerID
 }
 
-func New(self PeerInfo, peerInfo []PeerInfo) *Consensus {
+type peerInfoSlice []*PeerInfo
+
+func (pi peerInfoSlice) Len() int {
+	return len(pi)
+}
+
+func (pi peerInfoSlice) Less(i, j int) bool {
+	return strings.Compare(pi[i].info.Fingerprint(), pi[j].info.Fingerprint()) == -1
+}
+
+func (pi peerInfoSlice) Swap(i, j int) {
+	pi[i], pi[j] = pi[j], pi[i]
+}
+
+func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error) {
 	c := &Consensus{
-		peers:    make(map[pb.PeerID]chan<- *pb.Message),
-		self:     self,
-		peerInfo: peerInfo,
+		conn:    conn,
+		persist: persist,
+		peers:   make(map[pb.PeerID]chan<- *pb.Message),
+	}
+
+	prefix := "config.peers."
+	peers, err := c.persist.ReadStateSet(prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, cert := range peers {
+		addr := key[len(prefix):]
+
+		pi, err := connection.NewPeerInfo(addr, cert)
+		if err != nil {
+			return nil, err
+		}
+		cpi := &PeerInfo{
+			info: pi,
+			sort: pi.Fingerprint(),
+		}
+		if cpi.sort == conn.Self.Fingerprint() {
+			c.self = cpi
+		}
+		c.peerInfo = append(c.peerInfo, cpi)
+	}
+
+	sort.Sort(peerInfoSlice(c.peerInfo))
+	for i, pi := range c.peerInfo {
+		pi.id.Name = strconv.Itoa(i)
+		logger.Infof("replica %d: %s", i, pi.info.Fingerprint())
+	}
+
+	if c.self == nil {
+		return nil, fmt.Errorf("peer list does not contain local node")
 	}
 
 	for _, peer := range c.peerInfo {
@@ -60,14 +117,15 @@ func New(self PeerInfo, peerInfo []PeerInfo) *Consensus {
 		}
 		go c.connectWorker(peer)
 	}
-	return c
+	RegisterConsensusServer(conn.Server, (*consensusConn)(c))
+	return c, nil
 }
 
 func (c *Consensus) RegisterConsenter(consensus consensus.Consenter) {
 	c.consensus = consensus
 }
 
-func (c *Consensus) connectWorker(peer PeerInfo) {
+func (c *Consensus) connectWorker(peer *PeerInfo) {
 	delay := time.After(0)
 	for {
 		// pace reconnect attempts
@@ -76,18 +134,13 @@ func (c *Consensus) connectWorker(peer PeerInfo) {
 		// set up for next
 		delay = time.After(1 * time.Second)
 
-		// XXX get address
-		addr := peer.Name
-
-		// XXX pass context via NewConsensus
-		ctx := context.TODO()
-
-		// XXX tls dialopts
-		conn, err := grpc.Dial(addr)
+		conn, err := c.conn.DialPeer(peer.info)
 		if err != nil {
-			panic(err)
+			panic(err) // XXX temp for debug
 			continue
 		}
+
+		ctx := context.TODO()
 
 		client := NewConsensusClient(conn)
 		consensus, err := client.Consensus(ctx, nil)
@@ -102,9 +155,9 @@ func (c *Consensus) connectWorker(peer PeerInfo) {
 				break
 			}
 			if err != nil {
-				panic(err)
+				panic(err) // XXX temp for debug
 			}
-			c.consensus.RecvMsg(msg, &peer.PeerID)
+			c.consensus.RecvMsg(msg, &peer.id)
 		}
 		conn.Close()
 	}
@@ -118,10 +171,10 @@ func (c *consensusConn) Consensus(_ *google_protobuf.Empty, srv Consensus_Consen
 
 	ch := make(chan *pb.Message)
 	c.lock.Lock()
-	if oldch, ok := c.peers[peer.PeerID]; ok {
+	if oldch, ok := c.peers[peer.id]; ok {
 		close(oldch)
 	}
-	c.peers[peer.PeerID] = ch
+	c.peers[peer.id] = ch
 	c.lock.Unlock()
 
 	var err error
@@ -133,7 +186,7 @@ func (c *consensusConn) Consensus(_ *google_protobuf.Empty, srv Consensus_Consen
 	}
 
 	c.lock.Lock()
-	delete(c.peers, peer.PeerID)
+	delete(c.peers, peer.id)
 	c.lock.Lock()
 
 	return err
@@ -165,11 +218,11 @@ func (c *Consensus) GetNetworkInfo() (self *pb.PeerEndpoint, network []*pb.PeerE
 }
 
 func (c *Consensus) GetNetworkHandles() (self *pb.PeerID, network []*pb.PeerID, err error) {
-	selfCopy := c.self.PeerID
+	selfCopy := c.self.id
 	self = &selfCopy
 	for _, peer := range c.peerInfo {
 		peer := peer
-		network = append(network, &peer.PeerID)
+		network = append(network, &peer.id)
 	}
 	return
 }

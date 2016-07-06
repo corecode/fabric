@@ -16,7 +16,7 @@ limitations under the License.
 
 syntax = "proto3";
 
-package connection;
+package client;
 
 import "google/protobuf/empty.proto";
 
