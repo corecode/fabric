@@ -18,13 +18,14 @@ package consensus
 
 import (
 	"fmt"
-	"google/protobuf"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/transport"
 
 	"golang.org/x/net/context"
 
@@ -46,14 +47,13 @@ type Consensus struct {
 	peers map[pb.PeerID]chan<- *pb.Message
 
 	self     *PeerInfo
-	peerInfo []*PeerInfo
+	peerInfo map[string]*PeerInfo
 }
 
 type consensusConn Consensus
 
 type PeerInfo struct {
 	info connection.PeerInfo
-	sort string
 	id   pb.PeerID
 }
 
@@ -73,9 +73,10 @@ func (pi peerInfoSlice) Swap(i, j int) {
 
 func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error) {
 	c := &Consensus{
-		conn:    conn,
-		persist: persist,
-		peers:   make(map[pb.PeerID]chan<- *pb.Message),
+		conn:     conn,
+		persist:  persist,
+		peers:    make(map[pb.PeerID]chan<- *pb.Message),
+		peerInfo: make(map[string]*PeerInfo),
 	}
 
 	prefix := "config.peers."
@@ -84,6 +85,7 @@ func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error)
 		return nil, err
 	}
 
+	var peerInfo []*PeerInfo
 	for key, cert := range peers {
 		addr := key[len(prefix):]
 
@@ -91,18 +93,16 @@ func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error)
 		if err != nil {
 			return nil, err
 		}
-		cpi := &PeerInfo{
-			info: pi,
-			sort: pi.Fingerprint(),
-		}
-		if cpi.sort == conn.Self.Fingerprint() {
+		cpi := &PeerInfo{info: pi}
+		if pi.Fingerprint() == conn.Self.Fingerprint() {
 			c.self = cpi
 		}
-		c.peerInfo = append(c.peerInfo, cpi)
+		peerInfo = append(peerInfo, cpi)
+		c.peerInfo[pi.Fingerprint()] = cpi
 	}
 
-	sort.Sort(peerInfoSlice(c.peerInfo))
-	for i, pi := range c.peerInfo {
+	sort.Sort(peerInfoSlice(peerInfo))
+	for i, pi := range peerInfo {
 		pi.id.Name = strconv.Itoa(i)
 		logger.Infof("replica %d: %s", i, pi.info.Fingerprint())
 	}
@@ -110,6 +110,8 @@ func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error)
 	if c.self == nil {
 		return nil, fmt.Errorf("peer list does not contain local node")
 	}
+
+	logger.Infof("we are replica %s (%s)", c.self.id.Name, c.self.info)
 
 	for _, peer := range c.peerInfo {
 		if peer == c.self {
@@ -136,26 +138,28 @@ func (c *Consensus) connectWorker(peer *PeerInfo) {
 
 		conn, err := c.conn.DialPeer(peer.info)
 		if err != nil {
-			panic(err) // XXX temp for debug
+			logger.Warningf("could not connect to replica %s (%s): %s", peer.id.Name, peer.info, err)
 			continue
 		}
 
 		ctx := context.TODO()
 
 		client := NewConsensusClient(conn)
-		consensus, err := client.Consensus(ctx, nil)
+		consensus, err := client.Consensus(ctx, &Handshake{})
 		if err != nil {
-			panic(err)
+			logger.Warningf("could not establish consensus stream with replica %s (%s): %s", peer.id.Name, peer.info, err)
 			continue
 		}
+		logger.Infof("connection to replica %s (%s) established", peer.id.Name, peer.info)
 
 		for {
 			msg, err := consensus.Recv()
-			if err == io.EOF {
+			if err == io.EOF || err == transport.ErrConnClosing {
 				break
 			}
 			if err != nil {
-				panic(err) // XXX temp for debug
+				logger.Warningf("consensus stream with replica %s (%s) broke: %v", peer.id.Name, peer.info, err)
+				break
 			}
 			c.consensus.RecvMsg(msg, &peer.id)
 		}
@@ -164,14 +168,20 @@ func (c *Consensus) connectWorker(peer *PeerInfo) {
 }
 
 // gRPC interface
-func (c *consensusConn) Consensus(_ *google_protobuf.Empty, srv Consensus_ConsensusServer) error {
-	// XXX check tls cert
-	// XXX map to peerid
-	peer := c.peerInfo[0]
+func (c *consensusConn) Consensus(_ *Handshake, srv Consensus_ConsensusServer) error {
+	pi := c.conn.GetPeer(srv)
+	peer, ok := c.peerInfo[pi.Fingerprint()]
+
+	if !ok {
+		logger.Infof("rejecting connection from unknown replica %s", pi)
+		return fmt.Errorf("unknown peer certificate")
+	}
+	logger.Infof("connection from replica %s (%s)", peer.id.Name, pi)
 
 	ch := make(chan *pb.Message)
 	c.lock.Lock()
 	if oldch, ok := c.peers[peer.id]; ok {
+		logger.Debugf("replacing connection from replica %s", peer.id.Name)
 		close(oldch)
 	}
 	c.peers[peer.id] = ch
@@ -181,13 +191,13 @@ func (c *consensusConn) Consensus(_ *google_protobuf.Empty, srv Consensus_Consen
 	for msg := range ch {
 		err = srv.Send(msg)
 		if err != nil {
-			break
+			c.lock.Lock()
+			delete(c.peers, peer.id)
+			c.lock.Unlock()
+
+			logger.Infof("lost connection from replica %s (%s): %s", peer.id.Name, pi, err)
 		}
 	}
-
-	c.lock.Lock()
-	delete(c.peers, peer.id)
-	c.lock.Lock()
 
 	return err
 }

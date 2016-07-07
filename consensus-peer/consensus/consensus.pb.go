@@ -9,6 +9,7 @@ It is generated from these files:
 	consensus.proto
 
 It has these top-level messages:
+	Handshake
 */
 package consensus
 
@@ -16,7 +17,6 @@ import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
 import protos2 "github.com/hyperledger/fabric/protos"
-import google_protobuf1 "google/protobuf"
 
 import (
 	context "golang.org/x/net/context"
@@ -28,6 +28,13 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+type Handshake struct {
+}
+
+func (m *Handshake) Reset()         { *m = Handshake{} }
+func (m *Handshake) String() string { return proto.CompactTextString(m) }
+func (*Handshake) ProtoMessage()    {}
+
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
 var _ grpc.ClientConn
@@ -35,7 +42,7 @@ var _ grpc.ClientConn
 // Client API for Consensus service
 
 type ConsensusClient interface {
-	Consensus(ctx context.Context, in *google_protobuf1.Empty, opts ...grpc.CallOption) (Consensus_ConsensusClient, error)
+	Consensus(ctx context.Context, in *Handshake, opts ...grpc.CallOption) (Consensus_ConsensusClient, error)
 }
 
 type consensusClient struct {
@@ -46,7 +53,7 @@ func NewConsensusClient(cc *grpc.ClientConn) ConsensusClient {
 	return &consensusClient{cc}
 }
 
-func (c *consensusClient) Consensus(ctx context.Context, in *google_protobuf1.Empty, opts ...grpc.CallOption) (Consensus_ConsensusClient, error) {
+func (c *consensusClient) Consensus(ctx context.Context, in *Handshake, opts ...grpc.CallOption) (Consensus_ConsensusClient, error) {
 	stream, err := grpc.NewClientStream(ctx, &_Consensus_serviceDesc.Streams[0], c.cc, "/consensus.consensus/consensus", opts...)
 	if err != nil {
 		return nil, err
@@ -81,7 +88,7 @@ func (x *consensusConsensusClient) Recv() (*protos2.Message, error) {
 // Server API for Consensus service
 
 type ConsensusServer interface {
-	Consensus(*google_protobuf1.Empty, Consensus_ConsensusServer) error
+	Consensus(*Handshake, Consensus_ConsensusServer) error
 }
 
 func RegisterConsensusServer(s *grpc.Server, srv ConsensusServer) {
@@ -89,7 +96,7 @@ func RegisterConsensusServer(s *grpc.Server, srv ConsensusServer) {
 }
 
 func _Consensus_Consensus_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(google_protobuf1.Empty)
+	m := new(Handshake)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}

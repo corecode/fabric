@@ -25,6 +25,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/transport"
 )
 
 type PeerInfo struct {
@@ -51,8 +52,9 @@ func New(addr string, certFile string, keyFile string) (_ *Manager, err error) {
 	c.Self, err = NewPeerInfo("", cert.Certificate[0])
 
 	c.tlsConfig = tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequestClientCert,
+		Certificates:       []tls.Certificate{cert},
+		ClientAuth:         tls.RequestClientCert,
+		InsecureSkipVerify: true,
 	}
 
 	c.Listener, err = net.Listen("tcp", addr)
@@ -72,7 +74,33 @@ func (c *Manager) DialPeer(peer PeerInfo, opts ...grpc.DialOption) (*grpc.Client
 	clientTls.RootCAs = peer.cp
 	clientTls.ServerName = peer.addr
 	opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(&clientTls)))
-	return grpc.Dial(peer.addr, opts...)
+	conn, err := grpc.Dial(peer.addr, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	return conn, nil
+}
+
+func (c *Manager) GetPeer(s grpc.Stream) PeerInfo {
+	var pi PeerInfo
+
+	ctx := s.Context()
+	trs, ok := transport.StreamFromContext(ctx)
+	if ok {
+		pi.addr = trs.ServerTransport().RemoteAddr().String()
+	}
+
+	creds, _ := credentials.FromContext(ctx)
+	switch creds := creds.(type) {
+	case credentials.TLSInfo:
+		state := creds.State
+		if len(state.PeerCertificates) > 0 {
+			pi.cert = state.PeerCertificates[0]
+		}
+	}
+
+	return pi
 }
 
 // to check client: credentials.FromContext() -> AuthInfo
@@ -92,4 +120,8 @@ func NewPeerInfo(addr string, cert []byte) (_ PeerInfo, err error) {
 
 func (pi PeerInfo) Fingerprint() string {
 	return fmt.Sprintf("%x", sha256.Sum256(pi.cert.Raw))
+}
+
+func (pi PeerInfo) String() string {
+	return fmt.Sprintf("%.6s [%s]", pi.Fingerprint(), pi.addr)
 }
