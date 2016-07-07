@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package consensus
+package backend
 
 import (
 	"fmt"
@@ -36,9 +36,9 @@ import (
 	"github.com/op/go-logging"
 )
 
-var logger = logging.MustGetLogger("consensus")
+var logger = logging.MustGetLogger("backend")
 
-type Consensus struct {
+type Backend struct {
 	consensus consensus.Consenter
 	persist   *persist.Persist
 	conn      *connection.Manager
@@ -50,7 +50,7 @@ type Consensus struct {
 	peerInfo map[string]*PeerInfo
 }
 
-type consensusConn Consensus
+type consensusConn Backend
 
 type PeerInfo struct {
 	info connection.PeerInfo
@@ -71,8 +71,8 @@ func (pi peerInfoSlice) Swap(i, j int) {
 	pi[i], pi[j] = pi[j], pi[i]
 }
 
-func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error) {
-	c := &Consensus{
+func New(persist *persist.Persist, conn *connection.Manager) (*Backend, error) {
+	c := &Backend{
 		conn:     conn,
 		persist:  persist,
 		peers:    make(map[pb.PeerID]chan<- *pb.Message),
@@ -123,11 +123,11 @@ func New(persist *persist.Persist, conn *connection.Manager) (*Consensus, error)
 	return c, nil
 }
 
-func (c *Consensus) RegisterConsenter(consensus consensus.Consenter) {
+func (c *Backend) RegisterConsenter(consensus consensus.Consenter) {
 	c.consensus = consensus
 }
 
-func (c *Consensus) connectWorker(peer *PeerInfo) {
+func (c *Backend) connectWorker(peer *PeerInfo) {
 	delay := time.After(0)
 	for {
 		// pace reconnect attempts
@@ -203,11 +203,11 @@ func (c *consensusConn) Consensus(_ *Handshake, srv Consensus_ConsensusServer) e
 }
 
 // stack interface
-func (c *Consensus) Broadcast(msg *pb.Message, peerType pb.PeerEndpoint_Type) error {
+func (c *Backend) Broadcast(msg *pb.Message, peerType pb.PeerEndpoint_Type) error {
 	panic("not implemented")
 }
 
-func (c *Consensus) Unicast(msg *pb.Message, dest *pb.PeerID) error {
+func (c *Backend) Unicast(msg *pb.Message, dest *pb.PeerID) error {
 	c.lock.Lock()
 	ch, ok := c.peers[*dest]
 	c.lock.Unlock()
@@ -223,11 +223,11 @@ func (c *Consensus) Unicast(msg *pb.Message, dest *pb.PeerID) error {
 }
 
 //
-func (c *Consensus) GetNetworkInfo() (self *pb.PeerEndpoint, network []*pb.PeerEndpoint, err error) {
+func (c *Backend) GetNetworkInfo() (self *pb.PeerEndpoint, network []*pb.PeerEndpoint, err error) {
 	panic("not implemented")
 }
 
-func (c *Consensus) GetNetworkHandles() (self *pb.PeerID, network []*pb.PeerID, err error) {
+func (c *Backend) GetNetworkHandles() (self *pb.PeerID, network []*pb.PeerID, err error) {
 	selfCopy := c.self.id
 	self = &selfCopy
 	for _, peer := range c.peerInfo {

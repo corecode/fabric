@@ -16,20 +16,13 @@ limitations under the License.
 
 syntax = "proto3";
 
-package client;
+package backend;
 
-import "google/protobuf/empty.proto";
+import "github.com/hyperledger/fabric/protos/fabric.proto";
 
-service atomic_broadcast {
-    rpc broadcast(message) returns (google.protobuf.Empty) {}
-    rpc deliver(google.protobuf.Empty) returns (stream block) {}
+service consensus {
+    rpc consensus(handshake) returns (stream protos.Message) {}
 }
 
-message message {
-    bytes data = 1;
-}
-
-message block {
-    repeated message messages = 1;
-    bytes prev_hash = 2;
+message handshake {
 }

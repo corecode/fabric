@@ -3,7 +3,7 @@
 // DO NOT EDIT!
 
 /*
-Package client is a generated protocol buffer package.
+Package consensus is a generated protocol buffer package.
 
 It is generated from these files:
 	client.proto
@@ -12,7 +12,7 @@ It has these top-level messages:
 	Message
 	Block
 */
-package client
+package consensus
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
@@ -74,7 +74,7 @@ func NewAtomicBroadcastClient(cc *grpc.ClientConn) AtomicBroadcastClient {
 
 func (c *atomicBroadcastClient) Broadcast(ctx context.Context, in *Message, opts ...grpc.CallOption) (*google_protobuf.Empty, error) {
 	out := new(google_protobuf.Empty)
-	err := grpc.Invoke(ctx, "/client.atomic_broadcast/broadcast", in, out, c.cc, opts...)
+	err := grpc.Invoke(ctx, "/consensus.atomic_broadcast/broadcast", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (c *atomicBroadcastClient) Broadcast(ctx context.Context, in *Message, opts
 }
 
 func (c *atomicBroadcastClient) Deliver(ctx context.Context, in *google_protobuf.Empty, opts ...grpc.CallOption) (AtomicBroadcast_DeliverClient, error) {
-	stream, err := grpc.NewClientStream(ctx, &_AtomicBroadcast_serviceDesc.Streams[0], c.cc, "/client.atomic_broadcast/deliver", opts...)
+	stream, err := grpc.NewClientStream(ctx, &_AtomicBroadcast_serviceDesc.Streams[0], c.cc, "/consensus.atomic_broadcast/deliver", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (x *atomicBroadcastDeliverServer) Send(m *Block) error {
 }
 
 var _AtomicBroadcast_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "client.atomic_broadcast",
+	ServiceName: "consensus.atomic_broadcast",
 	HandlerType: (*AtomicBroadcastServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

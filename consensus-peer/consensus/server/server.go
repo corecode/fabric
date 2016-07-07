@@ -14,13 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package client
+package server
 
 import (
 	"sync"
 
-	"github.com/hyperledger/fabric/consensus"
+	fabric_consensus "github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus-peer/connection"
+	"github.com/hyperledger/fabric/consensus-peer/consensus"
 	pb "github.com/hyperledger/fabric/protos"
 
 	"golang.org/x/net/context"
@@ -28,41 +29,41 @@ import (
 	google_protobuf "google/protobuf"
 )
 
-type Client struct {
-	consensus consensus.Consenter
+type Server struct {
+	consensus fabric_consensus.Consenter
 	queueSize int
 
 	lock    sync.Mutex
-	deliver map[chan *Block]struct{}
+	deliver map[chan *consensus.Block]struct{}
 
-	executed *Block
+	executed *consensus.Block
 }
 
-type clientConn Client
+type clientServer Server
 
-func New(queueSize int, conn *connection.Manager) *Client {
-	c := &Client{
+func New(queueSize int, conn *connection.Manager) *Server {
+	c := &Server{
 		queueSize: queueSize,
-		executed:  &Block{},
+		executed:  &consensus.Block{},
 	}
-	RegisterAtomicBroadcastServer(conn.Server, (*clientConn)(c))
+	consensus.RegisterAtomicBroadcastServer(conn.Server, (*clientServer)(c))
 	return c
 }
 
-func (c *Client) RegisterConsensus(consensus consensus.Consenter) {
+func (c *Server) RegisterConsensus(consensus fabric_consensus.Consenter) {
 	c.consensus = consensus
 }
 
 // gRPC atomic_broadcast interface
-func (c *clientConn) Broadcast(ctx context.Context, msg *Message) (*google_protobuf.Empty, error) {
+func (c *clientServer) Broadcast(ctx context.Context, msg *consensus.Message) (*google_protobuf.Empty, error) {
 	// XXX check ctx tls credentials for permission to broadcast
 	c.consensus.RecvRequest(&pb.Transaction{Payload: msg.Data})
 	return nil, nil
 }
 
-func (c *clientConn) Deliver(_ *google_protobuf.Empty, srv AtomicBroadcast_DeliverServer) error {
+func (c *clientServer) Deliver(_ *google_protobuf.Empty, srv consensus.AtomicBroadcast_DeliverServer) error {
 	// XXX check src tls credentials for permission to subscribe
-	ch := make(chan *Block, c.queueSize)
+	ch := make(chan *consensus.Block, c.queueSize)
 	c.lock.Lock()
 	c.deliver[ch] = struct{}{}
 	c.lock.Unlock()
@@ -73,25 +74,25 @@ func (c *clientConn) Deliver(_ *google_protobuf.Empty, srv AtomicBroadcast_Deliv
 }
 
 // consensus.Executor interface
-func (c *Client) Start() {
+func (c *Server) Start() {
 	panic("not implemented")
 }
 
-func (c *Client) Halt() {
+func (c *Server) Halt() {
 	panic("not implemented")
 }
 
-func (c *Client) Execute(tag interface{}, txs []*pb.Transaction) {
-	msgs := make([]*Message, len(txs))
+func (c *Server) Execute(tag interface{}, txs []*pb.Transaction) {
+	msgs := make([]*consensus.Message, len(txs))
 	for i, tx := range txs {
-		msgs[i] = &Message{Data: tx.Payload}
+		msgs[i] = &consensus.Message{Data: tx.Payload}
 	}
 	c.executed.Messages = append(c.executed.Messages, msgs...)
 }
 
-func (c *Client) Commit(tag interface{}, metadata []byte) {
+func (c *Server) Commit(tag interface{}, metadata []byte) {
 	b := c.executed
-	c.executed = &Block{}
+	c.executed = &consensus.Block{}
 
 	c.lock.Lock()
 	out := c.deliver
@@ -111,31 +112,31 @@ func (c *Client) Commit(tag interface{}, metadata []byte) {
 	}
 }
 
-func (c *Client) Rollback(tag interface{}) {
-	c.executed = &Block{}
+func (c *Server) Rollback(tag interface{}) {
+	c.executed = &consensus.Block{}
 }
 
-func (c *Client) UpdateState(tag interface{}, target *pb.BlockchainInfo, peers []*pb.PeerID) {
+func (c *Server) UpdateState(tag interface{}, target *pb.BlockchainInfo, peers []*pb.PeerID) {
 	panic("not implemented")
 }
 
 //
-func (c *Client) BeginTxBatch(id interface{}) error {
+func (c *Server) BeginTxBatch(id interface{}) error {
 	panic("not implemented")
 }
 
-func (c *Client) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) {
+func (c *Server) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) {
 	panic("not implemented")
 }
 
-func (c *Client) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, error) {
+func (c *Server) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, error) {
 	panic("not implemented")
 }
 
-func (c *Client) RollbackTxBatch(id interface{}) error {
+func (c *Server) RollbackTxBatch(id interface{}) error {
 	panic("not implemented")
 }
 
-func (c *Client) PreviewCommitTxBatch(id interface{}, metadata []byte) ([]byte, error) {
+func (c *Server) PreviewCommitTxBatch(id interface{}, metadata []byte) ([]byte, error) {
 	panic("not implemented")
 }

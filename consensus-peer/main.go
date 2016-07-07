@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hyperledger/fabric/consensus-peer/client"
+	"github.com/hyperledger/fabric/consensus-peer/backend"
 	"github.com/hyperledger/fabric/consensus-peer/connection"
-	"github.com/hyperledger/fabric/consensus-peer/consensus"
+	"github.com/hyperledger/fabric/consensus-peer/consensus/server"
 	"github.com/hyperledger/fabric/consensus-peer/persist"
 	"github.com/hyperledger/fabric/consensus/pbft"
 
@@ -32,8 +32,8 @@ import (
 
 type consensusStack struct {
 	*persist.Persist
-	*client.Client
-	*consensus.Consensus
+	*server.Server
+	*backend.Backend
 }
 
 //
@@ -104,9 +104,9 @@ func main() {
 	}
 	s := &consensusStack{
 		Persist: persist.New(c.dataDir),
-		Client:  client.New(100, conn),
+		Server:  server.New(100, conn),
 	}
-	s.Consensus, err = consensus.New(s.Persist, conn)
+	s.Backend, err = backend.New(s.Persist, conn)
 	if err != nil {
 		panic(err)
 	}

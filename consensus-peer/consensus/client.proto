@@ -18,11 +18,18 @@ syntax = "proto3";
 
 package consensus;
 
-import "github.com/hyperledger/fabric/protos/fabric.proto";
+import "google/protobuf/empty.proto";
 
-service consensus {
-    rpc consensus(handshake) returns (stream protos.Message) {}
+service atomic_broadcast {
+    rpc broadcast(message) returns (google.protobuf.Empty) {}
+    rpc deliver(google.protobuf.Empty) returns (stream block) {}
 }
 
-message handshake {
+message message {
+    bytes data = 1;
+}
+
+message block {
+    repeated message messages = 1;
+    bytes prev_hash = 2;
 }

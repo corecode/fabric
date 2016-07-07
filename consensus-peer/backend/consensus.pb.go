@@ -3,7 +3,7 @@
 // DO NOT EDIT!
 
 /*
-Package consensus is a generated protocol buffer package.
+Package backend is a generated protocol buffer package.
 
 It is generated from these files:
 	consensus.proto
@@ -11,7 +11,7 @@ It is generated from these files:
 It has these top-level messages:
 	Handshake
 */
-package consensus
+package backend
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
@@ -54,7 +54,7 @@ func NewConsensusClient(cc *grpc.ClientConn) ConsensusClient {
 }
 
 func (c *consensusClient) Consensus(ctx context.Context, in *Handshake, opts ...grpc.CallOption) (Consensus_ConsensusClient, error) {
-	stream, err := grpc.NewClientStream(ctx, &_Consensus_serviceDesc.Streams[0], c.cc, "/consensus.consensus/consensus", opts...)
+	stream, err := grpc.NewClientStream(ctx, &_Consensus_serviceDesc.Streams[0], c.cc, "/backend.consensus/consensus", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (x *consensusConsensusServer) Send(m *protos2.Message) error {
 }
 
 var _Consensus_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "consensus.consensus",
+	ServiceName: "backend.consensus",
 	HandlerType: (*ConsensusServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
