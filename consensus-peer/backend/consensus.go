@@ -168,7 +168,6 @@ func (c *Backend) connectWorker(peer *PeerInfo) {
 			}
 			c.consensus.RecvMsg(msg, &peer.id)
 		}
-		conn.Close()
 	}
 }
 

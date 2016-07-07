@@ -45,12 +45,13 @@ func New(queueSize int, conn *connection.Manager) *Server {
 	c := &Server{
 		queueSize: queueSize,
 		executed:  &consensus.Block{},
+		deliver:   make(map[chan *consensus.Block]struct{}),
 	}
 	consensus.RegisterAtomicBroadcastServer(conn.Server, (*clientServer)(c))
 	return c
 }
 
-func (c *Server) RegisterConsensus(consensus fabric_consensus.Consenter) {
+func (c *Server) RegisterConsenter(consensus fabric_consensus.Consenter) {
 	c.consensus = consensus
 }
 
@@ -58,7 +59,7 @@ func (c *Server) RegisterConsensus(consensus fabric_consensus.Consenter) {
 func (c *clientServer) Broadcast(ctx context.Context, msg *consensus.Message) (*google_protobuf.Empty, error) {
 	// XXX check ctx tls credentials for permission to broadcast
 	c.consensus.RecvRequest(&pb.Transaction{Payload: msg.Data})
-	return nil, nil
+	return &google_protobuf.Empty{}, nil
 }
 
 func (c *clientServer) Deliver(_ *google_protobuf.Empty, srv consensus.AtomicBroadcast_DeliverServer) error {

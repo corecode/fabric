@@ -16,15 +16,18 @@ limitations under the License.
 
 package consensus
 
-import "github.com/hyperledger/fabric/consensus-peer/connection"
+import (
+	"github.com/hyperledger/fabric/consensus-peer/connection"
+	"google.golang.org/grpc"
+)
 
-func Dial(addr string, cert []byte) (AtomicBroadcastClient, error) {
+func Dial(addr string, cert []byte, opts ...grpc.DialOption) (AtomicBroadcastClient, error) {
 	peer, err := connection.NewPeerInfo(addr, cert)
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := connection.DialPeer(peer)
+	conn, err := connection.DialPeer(peer, opts...)
 	if err != nil {
 		return nil, err
 	}

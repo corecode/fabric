@@ -112,7 +112,8 @@ func main() {
 	}
 
 	pbft := pbft.New(s)
-	s.RegisterConsenter(pbft)
+	s.Server.RegisterConsenter(pbft)
+	s.Backend.RegisterConsenter(pbft)
 
 	// block forever
 	select {}
