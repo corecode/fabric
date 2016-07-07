@@ -19,7 +19,6 @@ package executor
 import (
 	"github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus/util/events"
-	"github.com/hyperledger/fabric/core/peer/statetransfer"
 	pb "github.com/hyperledger/fabric/protos"
 
 	"github.com/op/go-logging"
@@ -37,21 +36,30 @@ type PartialStack interface {
 	GetBlockchainInfo() *pb.BlockchainInfo
 }
 
+// Syncer is a copy of statetransfer.Coordinator.  It is used to initiate state transfer.  Start must be called before use, and Stop should be called to free allocated resources
+type Syncer interface {
+	Start() // Start the block transfer go routine
+	Stop()  // Stop up the block transfer go routine
+
+	// SyncToTarget attempts to move the state to the given target, returning an error, and whether this target might succeed if attempted at a later time
+	SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool)
+}
+
 type coordinatorImpl struct {
 	manager         events.Manager              // Maintains event thread and sends events to the coordinator
 	rawExecutor     PartialStack                // Does the real interaction with the ledger
 	consumer        consensus.ExecutionConsumer // The consumer of this coordinator which receives the callbacks
-	stc             statetransfer.Coordinator   // State transfer instance
+	stc             Syncer                      // State transfer instance
 	batchInProgress bool                        // Are we mid execution batch
 	skipInProgress  bool                        // Are we mid state transfer
 }
 
 // NewCoordinatorImpl creates a new executor.Coordinator
-func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stps statetransfer.PartialStack) consensus.Executor {
+func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stc Syncer) consensus.Executor {
 	co := &coordinatorImpl{
 		rawExecutor: rawExecutor,
 		consumer:    consumer,
-		stc:         statetransfer.NewCoordinatorImpl(stps),
+		stc:         stc,
 		manager:     events.NewManagerImpl(),
 	}
 	co.manager.SetReceiver(co)

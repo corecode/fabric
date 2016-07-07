@@ -30,6 +30,7 @@ import (
 	crypto "github.com/hyperledger/fabric/core/crypto"
 	"github.com/hyperledger/fabric/core/ledger"
 	"github.com/hyperledger/fabric/core/peer"
+	"github.com/hyperledger/fabric/core/peer/statetransfer"
 	pb "github.com/hyperledger/fabric/protos"
 )
 
@@ -44,7 +45,8 @@ type Helper struct {
 	curBatchErrs []*pb.TransactionResult // TODO, remove after issue 579
 	persist.Helper
 
-	executor consensus.Executor
+	executor      consensus.Executor
+	statetransfer statetransfer.Coordinator
 }
 
 // NewHelper constructs the consensus helper object
@@ -56,6 +58,7 @@ func NewHelper(mhc peer.MessageHandlerCoordinator) *Helper {
 		valid:       true, // Assume our state is consistent until we are told otherwise, TODO: revisit
 	}
 
+	h.statetransfer = statetransfer.NewCoordinatorImpl(h)
 	h.executor = executor.NewImpl(h, h, mhc)
 	h.executor.Start()
 	return h

@@ -22,14 +22,20 @@ import (
 	fabric_consensus "github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus-peer/connection"
 	"github.com/hyperledger/fabric/consensus-peer/consensus"
+	"github.com/hyperledger/fabric/consensus/executor"
 	pb "github.com/hyperledger/fabric/protos"
+	"github.com/op/go-logging"
 
 	"golang.org/x/net/context"
 
 	google_protobuf "google/protobuf"
 )
 
+var logger = logging.MustGetLogger("server")
+
 type Server struct {
+	fabric_consensus.Executor
+
 	consensus fabric_consensus.Consenter
 	queueSize int
 
@@ -53,6 +59,7 @@ func New(queueSize int, conn *connection.Manager) *Server {
 
 func (c *Server) RegisterConsenter(consensus fabric_consensus.Consenter) {
 	c.consensus = consensus
+	c.Executor = executor.NewImpl(c.consensus, c, c)
 }
 
 // gRPC atomic_broadcast interface
@@ -74,25 +81,24 @@ func (c *clientServer) Deliver(_ *google_protobuf.Empty, srv consensus.AtomicBro
 	return nil
 }
 
-// consensus.Executor interface
-func (c *Server) Start() {
-	panic("not implemented")
+//
+func (c *Server) BeginTxBatch(id interface{}) error {
+	c.executed = &consensus.Block{}
+	return nil
 }
 
-func (c *Server) Halt() {
-	panic("not implemented")
-}
-
-func (c *Server) Execute(tag interface{}, txs []*pb.Transaction) {
+func (c *Server) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) {
 	msgs := make([]*consensus.Message, len(txs))
 	for i, tx := range txs {
 		msgs[i] = &consensus.Message{Data: tx.Payload}
 	}
 	c.executed.Messages = append(c.executed.Messages, msgs...)
+	return nil, nil
 }
 
-func (c *Server) Commit(tag interface{}, metadata []byte) {
+func (c *Server) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, error) {
 	b := c.executed
+	logger.Info("delivering batch %v", b)
 	c.executed = &consensus.Block{}
 
 	c.lock.Lock()
@@ -111,33 +117,31 @@ func (c *Server) Commit(tag interface{}, metadata []byte) {
 			close(ch)
 		}
 	}
-}
 
-func (c *Server) Rollback(tag interface{}) {
-	c.executed = &consensus.Block{}
-}
-
-func (c *Server) UpdateState(tag interface{}, target *pb.BlockchainInfo, peers []*pb.PeerID) {
-	panic("not implemented")
-}
-
-//
-func (c *Server) BeginTxBatch(id interface{}) error {
-	panic("not implemented")
-}
-
-func (c *Server) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) {
-	panic("not implemented")
-}
-
-func (c *Server) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, error) {
-	panic("not implemented")
+	return nil, nil
 }
 
 func (c *Server) RollbackTxBatch(id interface{}) error {
-	panic("not implemented")
+	return nil
 }
 
 func (c *Server) PreviewCommitTxBatch(id interface{}, metadata []byte) ([]byte, error) {
+	panic("not implemented")
+}
+
+func (c *Server) GetBlockchainInfo() *pb.BlockchainInfo {
+	panic("not implemented")
+}
+
+// Syncer
+func (c *Server) Start() {
+	panic("not implemented")
+}
+
+func (c *Server) Stop() {
+	panic("not implemented")
+}
+
+func (c *Server) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool) {
 	panic("not implemented")
 }

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -104,7 +103,7 @@ func New(persist *persist.Persist, conn *connection.Manager) (*Backend, error) {
 
 	sort.Sort(peerInfoSlice(peerInfo))
 	for i, pi := range peerInfo {
-		pi.id.Name = strconv.Itoa(i)
+		pi.id.Name = fmt.Sprintf("vp%d", i)
 		logger.Infof("replica %d: %s", i, pi.info.Fingerprint())
 	}
 
@@ -217,7 +216,9 @@ func (c *Backend) Unicast(msg *pb.Message, dest *pb.PeerID) error {
 	c.lock.Unlock()
 
 	if !ok {
-		return fmt.Errorf("peer not found: %v", dest)
+		err := fmt.Errorf("peer not found: %v", dest)
+		logger.Debug(err)
+		return err
 	}
 
 	// XXX nonblocking interface

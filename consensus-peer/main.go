@@ -38,11 +38,13 @@ type consensusStack struct {
 
 //
 func (c *consensusStack) Sign(msg []byte) ([]byte, error) {
-	panic("not implemented")
+	//panic("not implemented")
+	return nil, nil
 }
 
 func (c *consensusStack) Verify(peerID *pb.PeerID, signature []byte, message []byte) error {
-	panic("not implemented")
+	//panic("not implemented")
+	return nil
 }
 
 //
@@ -60,10 +62,6 @@ func (c *consensusStack) GetBlock(id uint64) (block *pb.Block, err error) {
 }
 
 func (c *consensusStack) GetBlockchainSize() uint64 {
-	panic("not implemented")
-}
-
-func (c *consensusStack) GetBlockchainInfo() *pb.BlockchainInfo {
 	panic("not implemented")
 }
 
