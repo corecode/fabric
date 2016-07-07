@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/transport"
 
 	"golang.org/x/net/context"
@@ -128,15 +129,18 @@ func (c *Backend) RegisterConsenter(consensus consensus.Consenter) {
 }
 
 func (c *Backend) connectWorker(peer *PeerInfo) {
+	timeout := 1 * time.Second
+
 	delay := time.After(0)
 	for {
 		// pace reconnect attempts
 		<-delay
 
 		// set up for next
-		delay = time.After(1 * time.Second)
+		delay = time.After(timeout)
 
-		conn, err := c.conn.DialPeer(peer.info)
+		logger.Infof("connecting to replica %s (%s)", peer.id.Name, peer.info)
+		conn, err := c.conn.DialPeer(peer.info, grpc.WithBlock(), grpc.WithTimeout(timeout))
 		if err != nil {
 			logger.Warningf("could not connect to replica %s (%s): %s", peer.id.Name, peer.info, err)
 			continue
@@ -150,7 +154,8 @@ func (c *Backend) connectWorker(peer *PeerInfo) {
 			logger.Warningf("could not establish consensus stream with replica %s (%s): %s", peer.id.Name, peer.info, err)
 			continue
 		}
-		logger.Infof("connection to replica %s (%s) established", peer.id.Name, peer.info)
+
+		logger.Noticef("connection to replica %s (%s) established", peer.id.Name, peer.info)
 
 		for {
 			msg, err := consensus.Recv()
@@ -169,10 +174,10 @@ func (c *Backend) connectWorker(peer *PeerInfo) {
 
 // gRPC interface
 func (c *consensusConn) Consensus(_ *Handshake, srv Consensus_ConsensusServer) error {
-	pi := c.conn.GetPeer(srv)
+	pi := connection.GetPeer(srv)
 	peer, ok := c.peerInfo[pi.Fingerprint()]
 
-	if !ok {
+	if !ok || !peer.info.Cert().Equal(pi.Cert()) {
 		logger.Infof("rejecting connection from unknown replica %s", pi)
 		return fmt.Errorf("unknown peer certificate")
 	}
