@@ -60,6 +60,7 @@ func New(queueSize int, conn *connection.Manager) *Server {
 func (c *Server) RegisterConsenter(consensus fabric_consensus.Consenter) {
 	c.consensus = consensus
 	c.Executor = executor.NewImpl(c.consensus, c, c)
+	c.Executor.Start()
 }
 
 // gRPC atomic_broadcast interface
@@ -98,7 +99,6 @@ func (c *Server) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) 
 
 func (c *Server) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, error) {
 	b := c.executed
-	logger.Info("delivering batch %v", b)
 	c.executed = &consensus.Block{}
 
 	c.lock.Lock()
@@ -130,12 +130,12 @@ func (c *Server) PreviewCommitTxBatch(id interface{}, metadata []byte) ([]byte, 
 }
 
 func (c *Server) GetBlockchainInfo() *pb.BlockchainInfo {
-	panic("not implemented")
+	//	panic("not implemented")
+	return &pb.BlockchainInfo{}
 }
 
 // Syncer
 func (c *Server) Start() {
-	panic("not implemented")
 }
 
 func (c *Server) Stop() {

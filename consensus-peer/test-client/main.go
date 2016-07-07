@@ -81,7 +81,7 @@ func main() {
 				}
 				fmt.Printf("received block:\n")
 				for i, msg := range block.GetMessages() {
-					fmt.Printf("%d: %s", i, string(msg.Data))
+					fmt.Printf("%d: %s\n", i, string(msg.Data))
 				}
 			}
 		}()
