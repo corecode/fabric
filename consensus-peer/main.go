@@ -26,6 +26,7 @@ import (
 	"github.com/hyperledger/fabric/consensus-peer/consensus/server"
 	"github.com/hyperledger/fabric/consensus-peer/persist"
 	"github.com/hyperledger/fabric/consensus/pbft"
+	"github.com/op/go-logging"
 
 	pb "github.com/hyperledger/fabric/protos"
 )
@@ -65,10 +66,6 @@ func (c *consensusStack) GetBlockchainSize() uint64 {
 	panic("not implemented")
 }
 
-func (c *consensusStack) GetBlockchainInfoBlob() []byte {
-	panic("not implemented")
-}
-
 func (c *consensusStack) GetBlockHeadMetadata() ([]byte, error) {
 	return nil, fmt.Errorf("not implemented")
 }
@@ -78,6 +75,7 @@ type config struct {
 	certFile   string
 	keyFile    string
 	dataDir    string
+	verbose    string
 }
 
 //
@@ -88,8 +86,15 @@ func main() {
 	flag.StringVar(&c.certFile, "cert", "", "certificate `file`")
 	flag.StringVar(&c.keyFile, "key", "", "key `file`")
 	flag.StringVar(&c.dataDir, "data-dir", "", "data `dir`ectory")
+	flag.StringVar(&c.verbose, "verbose", "info", "set verbosity `level` (critical, error, warning, notice, info, debug)")
 
 	flag.Parse()
+
+	level, err := logging.LogLevel(c.verbose)
+	if err != nil {
+		panic(err)
+	}
+	logging.SetLevel(level, "")
 
 	if c.dataDir == "" {
 		fmt.Fprintln(os.Stderr, "need data directory")

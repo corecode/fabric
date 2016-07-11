@@ -38,7 +38,7 @@ do
 #!/bin/sh
 export CORE_PBFT_GENERAL_N=$count
 export CORE_PBFT_GENERAL_F=$fail
-consensus-peer -addr :$((6100+$n)) -cert cert$n.pem -key key.pem -data-dir data$n
+consensus-peer -addr :$((6100+$n)) -cert cert$n.pem -key key.pem -data-dir data$n "\$@"
 EOF
     chmod +x run-$n.sh
 done

@@ -66,12 +66,14 @@ func (c *Server) RegisterConsenter(consensus fabric_consensus.Consenter) {
 // gRPC atomic_broadcast interface
 func (c *clientServer) Broadcast(ctx context.Context, msg *consensus.Message) (*google_protobuf.Empty, error) {
 	// XXX check ctx tls credentials for permission to broadcast
+	// XXX log broadcast
 	c.consensus.RecvRequest(&pb.Transaction{Payload: msg.Data})
 	return &google_protobuf.Empty{}, nil
 }
 
 func (c *clientServer) Deliver(_ *google_protobuf.Empty, srv consensus.AtomicBroadcast_DeliverServer) error {
 	// XXX check src tls credentials for permission to subscribe
+	// XXX log subscription
 	ch := make(chan *consensus.Block, c.queueSize)
 	c.lock.Lock()
 	c.deliver[ch] = struct{}{}
@@ -144,4 +146,12 @@ func (c *Server) Stop() {
 
 func (c *Server) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool) {
 	panic("not implemented")
+}
+
+//
+func (c *Server) GetBlockchainInfoBlob() []byte {
+	// XXX assemble state for consensus service
+	// XXX this probably should include last block hash, etc.
+	//panic("not implemented")
+	return []byte("some internal state")
 }

@@ -17,11 +17,9 @@ limitations under the License.
 package main
 
 import (
-	"encoding/pem"
 	"flag"
 	"fmt"
 	"google/protobuf"
-	"io/ioutil"
 	"time"
 
 	"google.golang.org/grpc"
@@ -41,27 +39,7 @@ var (
 func main() {
 	flag.Parse()
 
-	certBytes, err := ioutil.ReadFile(*certFile)
-	if err != nil {
-		panic(err)
-	}
-
-	var b *pem.Block
-	for {
-		b, certBytes = pem.Decode(certBytes)
-		if b == nil {
-			break
-		}
-		if b.Type == "CERTIFICATE" {
-			break
-		}
-	}
-
-	if b == nil {
-		panic("no certificate found")
-	}
-
-	c, err := consensus.Dial(*addr, b.Bytes, grpc.WithBlock(), grpc.WithTimeout(time.Second))
+	c, err := consensus.DialPem(*addr, *certFile, grpc.WithBlock(), grpc.WithTimeout(time.Second))
 	if err != nil {
 		panic(err)
 	}
