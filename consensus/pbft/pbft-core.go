@@ -1026,6 +1026,8 @@ func (instance *pbftCore) execDoneSync() {
 	if instance.currentExec != nil {
 		logger.Infof("Replica %d finished execution %d, trying next", instance.id, *instance.currentExec)
 		instance.lastExec = *instance.currentExec
+		instance.persistLastSeqNo(instance.lastExec)
+
 		if instance.lastExec%instance.K == 0 {
 			instance.Checkpoint(instance.lastExec, instance.consumer.getState())
 		}
