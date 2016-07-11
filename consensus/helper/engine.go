@@ -17,113 +17,168 @@ limitations under the License.
 package helper
 
 import (
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/core/peer"
-
 	"fmt"
-	"sync"
+	"google/protobuf"
 
-	"github.com/hyperledger/fabric/consensus/controller"
-	"github.com/hyperledger/fabric/consensus/util"
+	"github.com/golang/protobuf/proto"
+	"github.com/hyperledger/fabric/consensus-peer/consensus"
 	"github.com/hyperledger/fabric/core/chaincode"
+	"github.com/hyperledger/fabric/core/ledger"
 	pb "github.com/hyperledger/fabric/protos"
+	"github.com/op/go-logging"
+	"github.com/spf13/viper"
+
 	"golang.org/x/net/context"
 )
 
-// EngineImpl implements a struct to hold consensus.Consenter, PeerEndpoint and MessageFan
-type EngineImpl struct {
-	consenter    consensus.Consenter
-	helper       *Helper
-	peerEndpoint *pb.PeerEndpoint
-	consensusFan *util.MessageFan
+var logger = logging.MustGetLogger("engine")
+
+// Engine implements a struct to hold consensus.Consenter, PeerEndpoint and MessageFan
+type Engine struct {
+	consensus consensus.AtomicBroadcastClient
 }
 
-// GetHandlerFactory returns new NewConsensusHandler
-func (eng *EngineImpl) GetHandlerFactory() peer.HandlerFactory {
-	return NewConsensusHandler
+func mkResponse(msg []byte, err error) *pb.Response {
+	r := &pb.Response{Status: pb.Response_SUCCESS}
+	if err != nil {
+		msg = []byte(fmt.Sprintf("Error: %s", err))
+		r.Status = pb.Response_FAILURE
+	}
+	r.Msg = msg
+	return r
 }
 
 // ProcessTransactionMsg processes a Message in context of a Transaction
-func (eng *EngineImpl) ProcessTransactionMsg(tx *pb.Transaction) (response *pb.Response) {
+func (eng *Engine) ProcessTransactionMsg(tx *pb.Transaction) (response *pb.Response) {
 	//TODO: Do we always verify security, or can we supply a flag on the invoke ot this functions so to bypass check for locally generated transactions?
 	if tx.Type == pb.Transaction_CHAINCODE_QUERY {
-		if !engine.helper.valid {
-			logger.Warning("Rejecting query because state is currently not valid")
-			return &pb.Response{Status: pb.Response_FAILURE,
-				Msg: []byte("Error: state may be inconsistent, cannot query")}
-		}
-
-		// The secHelper is set during creat ChaincodeSupport, so we don't need this step
-		// cxt := context.WithValue(context.Background(), "security", secHelper)
-		cxt := context.Background()
-		//query will ignore events as these are not stored on ledger (and query can report
-		//"event" data synchronously anyway)
+		// The secHelper is set during creat ChaincodeSupport,
+		// so we don't need this step cxt :=
+		// context.WithValue(context.Background(), "security",
+		// secHelper)
+		cxt := context.TODO()
+		//query will ignore events as these are not stored on
+		//ledger (and query can report "event" data
+		//synchronously anyway)
 		result, _, err := chaincode.Execute(cxt, chaincode.GetChain(chaincode.DefaultChain), tx)
-		if err != nil {
-			response = &pb.Response{Status: pb.Response_FAILURE,
-				Msg: []byte(fmt.Sprintf("Error:%s", err))}
-		} else {
-			response = &pb.Response{Status: pb.Response_SUCCESS, Msg: result}
-		}
+		response = mkResponse(result, err)
 	} else {
-		// Chaincode Transaction
-		response = &pb.Response{Status: pb.Response_SUCCESS, Msg: []byte(tx.Uuid)}
+		//TODO: Do we need to verify security, or can we
+		//supply a flag on the invoke ot this functions If we
+		//fail to marshal or verify the tx, don't send it to
+		//consensus plugin
 
-		//TODO: Do we need to verify security, or can we supply a flag on the invoke ot this functions
-		// If we fail to marshal or verify the tx, don't send it to consensus plugin
-		if response.Status == pb.Response_FAILURE {
-			return response
+		txRaw, err := proto.Marshal(tx)
+		if err != nil {
+			return mkResponse(nil, err)
 		}
 
-		// Pass the message to the consenter (eg. PBFT) NOTE: Make sure engine has been initialized
-		if eng.consenter == nil {
-			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("Engine not initialized")}
-		}
-		// TODO, This will block until
-		// the consenter gets around to handling the message, but it also provides some
-		// natural feedback to the REST API to determine how long it takes to queue messages
-		eng.consenter.RecvRequest(tx)
+		// TODO, This will block until the consenter gets
+		// around to handling the message, but it also
+		// provides some natural feedback to the REST API to
+		// determine how long it takes to queue messages
+		ctx := context.TODO()
+		_, err = eng.consensus.Broadcast(ctx, &consensus.Message{Data: txRaw})
+		response = mkResponse([]byte(tx.Uuid), err)
 	}
 	return response
 }
 
-func (eng *EngineImpl) setConsenter(consenter consensus.Consenter) *EngineImpl {
-	eng.consenter = consenter
-	return eng
-}
+func (e *Engine) deliverHandler(ctx context.Context) {
+RECONNECT:
+	for {
+		select {
+		case <-ctx.Done():
+			break RECONNECT
+		default:
+		}
 
-func (eng *EngineImpl) setPeerEndpoint(peerEndpoint *pb.PeerEndpoint) *EngineImpl {
-	eng.peerEndpoint = peerEndpoint
-	return eng
-}
+		client, err := e.consensus.Deliver(ctx, &google_protobuf.Empty{})
+		if err != nil {
+			// XXX can this happen?
+			panic(err)
+		}
 
-var engineOnce sync.Once
-
-var engine *EngineImpl
-
-func getEngineImpl() *EngineImpl {
-	return engine
-}
-
-// GetEngine returns initialized peer.Engine
-func GetEngine(coord peer.MessageHandlerCoordinator) (peer.Engine, error) {
-	var err error
-	engineOnce.Do(func() {
-		engine = new(EngineImpl)
-		engine.helper = NewHelper(coord)
-		engine.consenter = controller.NewConsenter(engine.helper)
-		engine.helper.setConsenter(engine.consenter)
-		engine.peerEndpoint, err = coord.GetPeerEndpoint()
-		engine.consensusFan = util.NewMessageFan()
-
-		go func() {
-			logger.Debug("Starting up message thread for consenter")
-
-			// The channel never closes, so this should never break
-			for msg := range engine.consensusFan.GetOutChannel() {
-				engine.consenter.RecvMsg(msg.Msg, msg.Sender)
+		for {
+			block, err := client.Recv()
+			if err != nil {
+				logger.Warningf("receive from consensus peer: %s", err)
+				break
 			}
-		}()
-	})
-	return engine, err
+
+			err = e.processBlock(ctx, block)
+			if err != nil {
+				logger.Errorf("cannot process new transaction block: %s", err)
+				break
+			}
+		}
+	}
+}
+
+func (e *Engine) processBlock(ctx context.Context, block *consensus.Block) error {
+	ledger, err := ledger.GetLedger()
+	if err != nil {
+		// this is an unrecoverable error
+		panic(err)
+	}
+
+	id := block
+
+	err = ledger.BeginTxBatch(id)
+	if err != nil {
+		// sequencing error?  we can't recover really
+		panic(err)
+	}
+
+	msgs := block.GetMessages()
+	txs := make([]*pb.Transaction, len(msgs))
+	for i, m := range msgs {
+		tx := &pb.Transaction{}
+		err := proto.Unmarshal(m.Data, tx)
+		if err != nil {
+			// XXX drop consenter, redial, state sync?
+			panic(err)
+		}
+		txs[i] = tx
+	}
+
+	successTXs, _, ccevents, txerrs, err := chaincode.ExecuteTransactions(ctx, chaincode.DefaultChain, txs)
+
+	// XXX why doesn't ExecuteTransactions return TransactionResult?
+	txresults := make([]*pb.TransactionResult, len(txerrs))
+	for i, e := range txerrs {
+		res := &pb.TransactionResult{
+			Uuid:           txs[i].Uuid,
+			ChaincodeEvent: ccevents[i],
+		}
+		if e != nil {
+			res.Error = e.Error()
+			res.ErrorCode = 1
+		}
+		txresults[i] = res
+	}
+
+	err = ledger.CommitTxBatch(id, successTXs, txresults, nil)
+	if err != nil {
+		// sequencing error?  we can't recover really
+		panic(err)
+	}
+	return nil
+}
+
+// New creates a new Engine
+func New() (_ *Engine, err error) {
+	e := &Engine{}
+
+	addr := viper.GetString("peer.validator.consenter.address")
+	cert := viper.GetString("peer.validator.consenter.cert.file")
+	e.consensus, err = consensus.DialPem(addr, cert)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.TODO()
+	go e.deliverHandler(ctx)
+
+	return e, nil
 }

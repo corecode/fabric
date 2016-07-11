@@ -56,12 +56,12 @@ logging:
     #
     # 3. The environment variables CORE_LOGGING_[NODE|NETWORK|CHAINCODE]
     #    otherwise apply to the respective peer commands if defined as non-empty
-    #    strings. 
+    #    strings.
     #
     # 4. Otherwise, the specifications below apply.
     #
     # Developers: Please see fabric/docs/dev-setup/logging-control.md for more
-    # options. 
+    # options.
 
     node:      info
     network:   warning
@@ -131,13 +131,10 @@ peer:
     validator:
         enabled: true
 
-        consensus:
-            # Consensus plugin to use. The value is the name of the plugin, e.g. pbft, noops ( this value is case-insensitive)
-            # if the given value is not recognized, we will default to noops
-            plugin: noops
-
-            # total number of consensus messages which will be buffered per connection before delivery is rejected
-            buffersize: 1000
+        consenter:
+            address:
+            cert:
+                file:
 
         events:
             # The address that the Event service will be enabled on the validator
@@ -258,6 +255,7 @@ vm:
                 Config:
                     max-size: "50m"
                     max-file: "5"
+
 ###############################################################################
 #
 #    Chaincode section

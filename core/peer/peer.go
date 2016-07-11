@@ -33,6 +33,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
+	"github.com/hyperledger/fabric/consensus/helper"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/crypto"
 	"github.com/hyperledger/fabric/core/db"
@@ -180,7 +181,7 @@ type handlerMap struct {
 type HandlerFactory func(MessageHandlerCoordinator, ChatStream, bool, MessageHandler) (MessageHandler, error)
 
 // EngineFactory for creating new engines
-type EngineFactory func(MessageHandlerCoordinator) (Engine, error)
+type EngineFactory func() (*helper.Engine, error)
 
 // PeerImpl implementation of the Peer service
 type PeerImpl struct {
@@ -203,9 +204,6 @@ type TransactionProccesor interface {
 // Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
 type Engine interface {
 	TransactionProccesor
-	// GetHandlerFactory return a handler for an accepted Chat stream
-	GetHandlerFactory() HandlerFactory
-	//GetInputChannel() (chan<- *pb.Transaction, error)
 }
 
 // NewPeerWithHandler returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
@@ -262,11 +260,11 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	}
 	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
-	peer.engine, err = engFactory(peer)
+	peer.engine, err = engFactory()
 	if err != nil {
 		return nil, err
 	}
-	peer.handlerFactory = peer.engine.GetHandlerFactory()
+	peer.handlerFactory = NewPeerHandler
 	if peer.handlerFactory == nil {
 		return nil, errors.New("Cannot supply nil handler factory")
 	}

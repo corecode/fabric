@@ -468,7 +468,7 @@ func serve(args []string) error {
 			return makeGenesisError
 		}
 		logger.Debugf("Running as validating peer - installing consensus %s", viper.GetString("peer.validator.consensus"))
-		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
+		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.New)
 	} else {
 		logger.Debug("Running as non-validating peer")
 		peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
