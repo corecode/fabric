@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"google/protobuf"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -34,7 +35,42 @@ var (
 	addr      = flag.String("addr", "", "consensus `peer` address")
 	listen    = flag.Bool("listen", false, "whether to listen to delivery events")
 	broadcast = flag.String("broadcast", "", "string to broadcast")
+	parallel  = flag.Int("parallel", 0, "`count` of parallel continuous broadcasts")
 )
+
+func parallelClient(c consensus.AtomicBroadcastClient, count int, msg *consensus.Message) {
+	var success int64
+	var failure int64
+
+	for i := 0; i < count; i++ {
+		go func() {
+			ctx := context.TODO()
+			for {
+				_, err := c.Broadcast(ctx, msg)
+				if err != nil {
+					atomic.AddInt64(&failure, 1)
+					time.Sleep(1 * time.Second)
+				} else {
+					atomic.AddInt64(&success, 1)
+				}
+			}
+		}()
+	}
+
+	start := time.Now()
+	successPrev, failurePrev := success, failure
+	for {
+		time.Sleep(1 * time.Second)
+		end := time.Now()
+		success, failure := success, failure
+		duration := end.Sub(start)
+		fmt.Printf("success: %.2f failure: %.2f\n",
+			float64(success-successPrev)/duration.Seconds(),
+			float64(failure-failurePrev)/duration.Seconds())
+		start = end
+		successPrev, failurePrev = success, failure
+	}
+}
 
 func main() {
 	flag.Parse()
@@ -66,7 +102,11 @@ func main() {
 	}
 
 	if *broadcast != "" {
-		c.Broadcast(context.TODO(), &consensus.Message{[]byte(*broadcast)})
+		if *parallel <= 0 {
+			c.Broadcast(context.TODO(), &consensus.Message{[]byte(*broadcast)})
+		} else {
+			parallelClient(c, *parallel, &consensus.Message{[]byte(*broadcast)})
+		}
 	}
 
 	if *listen {
