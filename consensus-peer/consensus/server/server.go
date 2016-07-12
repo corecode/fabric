@@ -18,6 +18,7 @@ package server
 
 import (
 	"sync"
+	"time"
 
 	fabric_consensus "github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus-peer/connection"
@@ -67,7 +68,14 @@ func (c *Server) RegisterConsenter(consensus fabric_consensus.Consenter) {
 func (c *clientServer) Broadcast(ctx context.Context, msg *consensus.Message) (*google_protobuf.Empty, error) {
 	// XXX check ctx tls credentials for permission to broadcast
 	// XXX log broadcast
-	c.consensus.RecvRequest(&pb.Transaction{Payload: msg.Data})
+	now := time.Now()
+	c.consensus.RecvRequest(&pb.Transaction{
+		Payload: msg.Data,
+		Timestamp: &google_protobuf.Timestamp{
+			Seconds: now.Unix(),
+			Nanos:   int32(now.UnixNano() % 1000000000),
+		},
+	})
 	return &google_protobuf.Empty{}, nil
 }
 
