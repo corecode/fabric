@@ -19,6 +19,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
 	"github.com/hyperledger/fabric/consensus-peer/backend"
@@ -26,6 +28,7 @@ import (
 	"github.com/hyperledger/fabric/consensus-peer/consensus/server"
 	"github.com/hyperledger/fabric/consensus-peer/persist"
 	"github.com/hyperledger/fabric/consensus/pbft"
+	"github.com/hyperledger/fabric/core/telemetry"
 	"github.com/op/go-logging"
 
 	pb "github.com/hyperledger/fabric/protos"
@@ -71,11 +74,12 @@ func (c *consensusStack) GetBlockHeadMetadata() ([]byte, error) {
 }
 
 type config struct {
-	listenAddr string
-	certFile   string
-	keyFile    string
-	dataDir    string
-	verbose    string
+	listenAddr    string
+	telemetryAddr string
+	certFile      string
+	keyFile       string
+	dataDir       string
+	verbose       string
 }
 
 //
@@ -83,6 +87,7 @@ func main() {
 	var c config
 
 	flag.StringVar(&c.listenAddr, "addr", ":6100", "`addr`ess/port of service")
+	flag.StringVar(&c.telemetryAddr, "telemetry", ":7100", "`addr`ess of telemetry/profiler")
 	flag.StringVar(&c.certFile, "cert", "", "certificate `file`")
 	flag.StringVar(&c.keyFile, "key", "", "key `file`")
 	flag.StringVar(&c.dataDir, "data-dir", "", "data `dir`ectory")
@@ -99,6 +104,16 @@ func main() {
 	if c.dataDir == "" {
 		fmt.Fprintln(os.Stderr, "need data directory")
 		os.Exit(1)
+	}
+
+	if c.telemetryAddr != "" {
+		go func() {
+			err := http.ListenAndServe(c.telemetryAddr, nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+		}()
+		telemetry.Init("/telemetry", nil)
 	}
 
 	conn, err := connection.New(c.listenAddr, c.certFile, c.keyFile)
