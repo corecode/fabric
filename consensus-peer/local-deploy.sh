@@ -19,15 +19,16 @@ cd $dest
 
 certtool --generate-privkey --outfile key.pem 2>/dev/null
 mkdir data
-cat > template.cfg <<EOF
-expiration_days = -1
-signing_key
-encryption_key
-EOF
 
 for n in $(seq $count)
 do
-    certtool --generate-self-signed --load-privkey key.pem --outfile cert$n.pem --template template.cfg 2>/dev/null
+    cat > template$n.cfg <<EOF
+expiration_days = -1
+serial = $(date +"%N")
+signing_key
+encryption_key
+EOF
+    certtool --generate-self-signed --load-privkey key.pem --outfile cert$n.pem --template template$n.cfg 2>/dev/null
     certtool -i --infile cert$n.pem --outder --outfile data/config.peers.:$((6100+$n)) 2>/dev/null
 done
 
