@@ -172,9 +172,14 @@ func New() (_ *Engine, err error) {
 
 	addr := viper.GetString("peer.validator.consenter.address")
 	cert := viper.GetString("peer.validator.consenter.cert.file")
-	e.consensus, err = consensus.DialPem(addr, cert)
-	if err != nil {
-		return nil, err
+
+	if addr == "local-development-loopback-consensus" {
+		e.consensus = newLoopbackConsensus()
+	} else {
+		e.consensus, err = consensus.DialPem(addr, cert)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ctx := context.TODO()
