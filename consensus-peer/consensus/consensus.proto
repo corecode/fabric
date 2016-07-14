@@ -22,11 +22,15 @@ import "google/protobuf/empty.proto";
 
 service atomic_broadcast {
     rpc broadcast(message) returns (google.protobuf.Empty) {}
+    rpc broadcast_stream(stream message) returns (stream reply) {}
     rpc deliver(google.protobuf.Empty) returns (stream block) {}
 }
 
 message message {
     bytes data = 1;
+}
+
+message reply {
 }
 
 message block {

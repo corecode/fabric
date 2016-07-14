@@ -45,8 +45,13 @@ func parallelClient(c consensus.AtomicBroadcastClient, count int, msg *consensus
 	for i := 0; i < count; i++ {
 		go func() {
 			ctx := context.TODO()
+			srv, err := c.BroadcastStream(ctx)
 			for {
-				_, err := c.Broadcast(ctx, msg)
+				// _, err := c.Broadcast(ctx, msg)
+				err = srv.Send(msg)
+				if err == nil {
+					_, err = srv.Recv()
+				}
 				if err != nil {
 					atomic.AddInt64(&failure, 1)
 					time.Sleep(1 * time.Second)

@@ -10,6 +10,7 @@ It is generated from these files:
 
 It has these top-level messages:
 	Message
+	Reply
 	Block
 */
 package consensus
@@ -37,6 +38,13 @@ func (m *Message) Reset()         { *m = Message{} }
 func (m *Message) String() string { return proto.CompactTextString(m) }
 func (*Message) ProtoMessage()    {}
 
+type Reply struct {
+}
+
+func (m *Reply) Reset()         { *m = Reply{} }
+func (m *Reply) String() string { return proto.CompactTextString(m) }
+func (*Reply) ProtoMessage()    {}
+
 type Block struct {
 	Messages []*Message `protobuf:"bytes,1,rep,name=messages" json:"messages,omitempty"`
 	PrevHash []byte     `protobuf:"bytes,2,opt,name=prev_hash,proto3" json:"prev_hash,omitempty"`
@@ -61,6 +69,7 @@ var _ grpc.ClientConn
 
 type AtomicBroadcastClient interface {
 	Broadcast(ctx context.Context, in *Message, opts ...grpc.CallOption) (*google_protobuf.Empty, error)
+	BroadcastStream(ctx context.Context, opts ...grpc.CallOption) (AtomicBroadcast_BroadcastStreamClient, error)
 	Deliver(ctx context.Context, in *google_protobuf.Empty, opts ...grpc.CallOption) (AtomicBroadcast_DeliverClient, error)
 }
 
@@ -81,8 +90,39 @@ func (c *atomicBroadcastClient) Broadcast(ctx context.Context, in *Message, opts
 	return out, nil
 }
 
+func (c *atomicBroadcastClient) BroadcastStream(ctx context.Context, opts ...grpc.CallOption) (AtomicBroadcast_BroadcastStreamClient, error) {
+	stream, err := grpc.NewClientStream(ctx, &_AtomicBroadcast_serviceDesc.Streams[0], c.cc, "/consensus.atomic_broadcast/broadcast_stream", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &atomicBroadcastBroadcastStreamClient{stream}
+	return x, nil
+}
+
+type AtomicBroadcast_BroadcastStreamClient interface {
+	Send(*Message) error
+	Recv() (*Reply, error)
+	grpc.ClientStream
+}
+
+type atomicBroadcastBroadcastStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *atomicBroadcastBroadcastStreamClient) Send(m *Message) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *atomicBroadcastBroadcastStreamClient) Recv() (*Reply, error) {
+	m := new(Reply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *atomicBroadcastClient) Deliver(ctx context.Context, in *google_protobuf.Empty, opts ...grpc.CallOption) (AtomicBroadcast_DeliverClient, error) {
-	stream, err := grpc.NewClientStream(ctx, &_AtomicBroadcast_serviceDesc.Streams[0], c.cc, "/consensus.atomic_broadcast/deliver", opts...)
+	stream, err := grpc.NewClientStream(ctx, &_AtomicBroadcast_serviceDesc.Streams[1], c.cc, "/consensus.atomic_broadcast/deliver", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +157,7 @@ func (x *atomicBroadcastDeliverClient) Recv() (*Block, error) {
 
 type AtomicBroadcastServer interface {
 	Broadcast(context.Context, *Message) (*google_protobuf.Empty, error)
+	BroadcastStream(AtomicBroadcast_BroadcastStreamServer) error
 	Deliver(*google_protobuf.Empty, AtomicBroadcast_DeliverServer) error
 }
 
@@ -134,6 +175,32 @@ func _AtomicBroadcast_Broadcast_Handler(srv interface{}, ctx context.Context, de
 		return nil, err
 	}
 	return out, nil
+}
+
+func _AtomicBroadcast_BroadcastStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AtomicBroadcastServer).BroadcastStream(&atomicBroadcastBroadcastStreamServer{stream})
+}
+
+type AtomicBroadcast_BroadcastStreamServer interface {
+	Send(*Reply) error
+	Recv() (*Message, error)
+	grpc.ServerStream
+}
+
+type atomicBroadcastBroadcastStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *atomicBroadcastBroadcastStreamServer) Send(m *Reply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *atomicBroadcastBroadcastStreamServer) Recv() (*Message, error) {
+	m := new(Message)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func _AtomicBroadcast_Deliver_Handler(srv interface{}, stream grpc.ServerStream) error {
@@ -167,6 +234,12 @@ var _AtomicBroadcast_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "broadcast_stream",
+			Handler:       _AtomicBroadcast_BroadcastStream_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
 		{
 			StreamName:    "deliver",
 			Handler:       _AtomicBroadcast_Deliver_Handler,

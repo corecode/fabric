@@ -79,6 +79,27 @@ func (c *clientServer) Broadcast(ctx context.Context, msg *consensus.Message) (*
 	return &google_protobuf.Empty{}, nil
 }
 
+func (c *clientServer) BroadcastStream(srv consensus.AtomicBroadcast_BroadcastStreamServer) error {
+	for {
+		msg, err := srv.Recv()
+		if err != nil {
+			return err
+		}
+		now := time.Now()
+		c.consensus.RecvRequest(&pb.Transaction{
+			Payload: msg.Data,
+			Timestamp: &google_protobuf.Timestamp{
+				Seconds: now.Unix(),
+				Nanos:   int32(now.UnixNano() % 1000000000),
+			},
+		})
+		err = srv.Send(&consensus.Reply{})
+		if err != nil {
+			return err
+		}
+	}
+}
+
 func (c *clientServer) Deliver(_ *google_protobuf.Empty, srv consensus.AtomicBroadcast_DeliverServer) error {
 	// XXX check src tls credentials for permission to subscribe
 	// XXX log subscription
