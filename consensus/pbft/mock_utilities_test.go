@@ -28,7 +28,6 @@ import (
 	gp "google/protobuf"
 
 	pb "github.com/hyperledger/fabric/protos"
-	"github.com/spf13/viper"
 )
 
 type inertTimer struct{}
@@ -96,9 +95,9 @@ func (p *mockPersist) DelState(key string) {
 	delete(p.store, key)
 }
 
-func createRunningPbftWithManager(id uint64, config *viper.Viper, stack innerStack) (*pbftCore, events.Manager) {
+func createRunningPbftWithManager(id uint64, config BatchConfig, stack innerStack) (*pbftCore, events.Manager) {
 	manager := events.NewManagerImpl()
-	core := newPbftCore(id, loadConfig(), stack, events.NewTimerFactoryImpl(manager))
+	core := newPbftCore(id, config.PbftConfig, stack, events.NewTimerFactoryImpl(manager))
 	manager.SetReceiver(core)
 	manager.Start()
 	return core, manager

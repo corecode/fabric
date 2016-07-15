@@ -29,7 +29,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/spf13/viper"
 )
 
 type obcBatch struct {
@@ -81,9 +80,14 @@ type batchMessageEvent batchMessage
 // batchTimerEvent is sent when the batch timer expires
 type batchTimerEvent struct{}
 
-func newObcBatch(id uint64, config *viper.Viper, stack consensus.Stack) *obcBatch {
-	var err error
+type BatchConfig struct {
+	PbftConfig
+	BatchSize    int
+	BatchTimeout time.Duration
+	Outstanding  int
+}
 
+func newObcBatch(id uint64, config BatchConfig, stack consensus.Stack) *obcBatch {
 	op := &obcBatch{
 		obcGeneric: obcGeneric{stack: stack},
 	}
@@ -95,18 +99,15 @@ func newObcBatch(id uint64, config *viper.Viper, stack consensus.Stack) *obcBatc
 	op.manager = events.NewManagerImpl() // TODO, this is hacky, eventually rip it out
 	op.manager.SetReceiver(op)
 	etf := events.NewTimerFactoryImpl(op.manager)
-	op.pbft = newPbftCore(id, config, op, etf)
+	op.pbft = newPbftCore(id, config.PbftConfig, op, etf)
 	op.manager.Start()
 	op.externalEventReceiver.manager = op.manager
 	op.broadcaster = newBroadcaster(id, op.pbft.N, op.pbft.f, stack)
 
-	op.batchSize = config.GetInt("general.batchsize")
+	op.batchSize = config.BatchSize
 	op.batchStore = nil
-	op.batchTimeout, err = time.ParseDuration(config.GetString("general.timeout.batch"))
-	if err != nil {
-		panic(fmt.Errorf("Cannot parse batch timeout: %s", err))
-	}
-	outstandingSize := config.GetInt("general.outstanding")
+	op.batchTimeout = config.BatchTimeout
+	outstandingSize := config.Outstanding
 	logger.Infof("PBFT Batch outstanding requests = %d", outstandingSize)
 	logger.Infof("PBFT Batch size = %d", op.batchSize)
 	logger.Infof("PBFT Batch timeout = %v", op.batchTimeout)

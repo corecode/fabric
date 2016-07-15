@@ -23,8 +23,6 @@ import (
 	"github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus/util/events"
 	pb "github.com/hyperledger/fabric/protos"
-
-	"github.com/spf13/viper"
 )
 
 type consumerEndpoint struct {
@@ -119,7 +117,7 @@ func (cnet *consumerNetwork) GetLedgerByPeerID(peerID *pb.PeerID) (consensus.Rea
 	return cnet.mockLedgers[id], true
 }
 
-func makeConsumerNetwork(N int, makeConsumer func(id uint64, config *viper.Viper, stack consensus.Stack) pbftConsumer, initFNs ...func(*consumerEndpoint)) *consumerNetwork {
+func makeConsumerNetwork(N int, makeConsumer func(id uint64, config BatchConfig, stack consensus.Stack) pbftConsumer, initFNs ...func(*consumerEndpoint)) *consumerNetwork {
 	twl := consumerNetwork{mockLedgers: make([]*MockLedger, N)}
 
 	endpointFunc := func(id uint64, net *testnet) endpoint {

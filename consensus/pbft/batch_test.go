@@ -25,14 +25,13 @@ import (
 	pb "github.com/hyperledger/fabric/protos"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/spf13/viper"
 )
 
 func (op *obcBatch) getPBFTCore() *pbftCore {
 	return op.pbft
 }
 
-func obcBatchHelper(id uint64, config *viper.Viper, stack consensus.Stack) pbftConsumer {
+func obcBatchHelper(id uint64, config BatchConfig, stack consensus.Stack) pbftConsumer {
 	// It's not entirely obvious why the compiler likes the parent function, but not newObcBatch directly
 	return newObcBatch(id, config, stack)
 }
@@ -255,10 +254,10 @@ func TestViewChangeOnPrimarySilence(t *testing.T) {
 	}
 }
 
-func obcBatchSizeOneHelper(id uint64, config *viper.Viper, stack consensus.Stack) pbftConsumer {
+func obcBatchSizeOneHelper(id uint64, config BatchConfig, stack consensus.Stack) pbftConsumer {
 	// It's not entirely obvious why the compiler likes the parent function, but not newObcClassic directly
-	config.Set("general.batchsize", 1)
-	config.Set("general.outstanding", 100)
+	config.BatchSize = 1
+	config.Outstanding = 100
 	return newObcBatch(id, config, stack)
 }
 

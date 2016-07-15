@@ -19,7 +19,6 @@ package pbft
 import (
 	"encoding/base64"
 	"fmt"
-	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -29,7 +28,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/spf13/viper"
 )
 
 // =============================================================================
@@ -125,7 +123,6 @@ type pbftCore struct {
 
 	// PBFT data
 	activeView    bool              // view change happening
-	byzantine     bool              // whether this node is intentionally acting as Byzantine; useful for debugging on the testnet
 	f             int               // max. number of faults we can tolerate
 	N             int               // max.number of validators in the network
 	h             uint64            // low watermark
@@ -216,8 +213,19 @@ func (a sortableUint64Slice) Less(i, j int) bool {
 // constructors
 // =============================================================================
 
-func newPbftCore(id uint64, config *viper.Viper, consumer innerStack, etf events.TimerFactory) *pbftCore {
-	var err error
+type PbftConfig struct {
+	N                       int
+	F                       int
+	K                       uint64
+	Lmultiplier             uint64
+	ViewchangePeriod        uint64
+	RequestTimeout          time.Duration
+	ViewchangeResendTimeout time.Duration
+	ViewchangeTimeout       time.Duration
+	NullRequestTimeout      time.Duration
+}
+
+func newPbftCore(id uint64, config PbftConfig, consumer innerStack, etf events.TimerFactory) *pbftCore {
 	instance := &pbftCore{}
 	instance.id = id
 	instance.consumer = consumer
@@ -226,39 +234,24 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack, etf events
 	instance.vcResendTimer = etf.CreateTimer()
 	instance.nullRequestTimer = etf.CreateTimer()
 
-	instance.N = config.GetInt("general.N")
-	instance.f = config.GetInt("general.f")
+	instance.N = config.N
+	instance.f = config.F
 	if instance.f*3+1 > instance.N {
 		panic(fmt.Sprintf("need at least %d enough replicas to tolerate %d byzantine faults, but only %d replicas configured", instance.f*3+1, instance.f, instance.N))
 	}
 
-	instance.K = uint64(config.GetInt("general.K"))
+	instance.K = config.K
 
-	instance.logMultiplier = uint64(config.GetInt("general.logmultiplier"))
-	if instance.logMultiplier < 2 {
+	if config.Lmultiplier < 2 {
 		panic("Log multiplier must be greater than or equal to 2")
 	}
-	instance.L = instance.logMultiplier * instance.K // log size
-	instance.viewChangePeriod = uint64(config.GetInt("general.viewchangeperiod"))
+	instance.L = config.Lmultiplier * instance.K // log size
+	instance.viewChangePeriod = config.ViewchangePeriod
 
-	instance.byzantine = config.GetBool("general.byzantine")
-
-	instance.requestTimeout, err = time.ParseDuration(config.GetString("general.timeout.request"))
-	if err != nil {
-		panic(fmt.Errorf("Cannot parse request timeout: %s", err))
-	}
-	instance.vcResendTimeout, err = time.ParseDuration(config.GetString("general.timeout.resendviewchange"))
-	if err != nil {
-		panic(fmt.Errorf("Cannot parse request timeout: %s", err))
-	}
-	instance.newViewTimeout, err = time.ParseDuration(config.GetString("general.timeout.viewchange"))
-	if err != nil {
-		panic(fmt.Errorf("Cannot parse new view timeout: %s", err))
-	}
-	instance.nullRequestTimeout, err = time.ParseDuration(config.GetString("general.timeout.nullrequest"))
-	if err != nil {
-		instance.nullRequestTimeout = 0
-	}
+	instance.requestTimeout = config.RequestTimeout
+	instance.vcResendTimeout = config.ViewchangeResendTimeout
+	instance.newViewTimeout = config.ViewchangeTimeout
+	instance.nullRequestTimeout = config.NullRequestTimeout
 
 	instance.activeView = true
 	instance.replicaCount = instance.N
@@ -266,7 +259,6 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack, etf events
 	logger.Infof("PBFT type = %T", instance.consumer)
 	logger.Infof("PBFT Max number of validating peers (N) = %v", instance.N)
 	logger.Infof("PBFT Max number of failing peers (f) = %v", instance.f)
-	logger.Infof("PBFT byzantine flag = %v", instance.byzantine)
 	logger.Infof("PBFT request timeout = %v", instance.requestTimeout)
 	logger.Infof("PBFT view change timeout = %v", instance.newViewTimeout)
 	logger.Infof("PBFT Checkpoint period (K) = %v", instance.K)
@@ -1310,29 +1302,7 @@ func (instance *pbftCore) innerBroadcast(msg *Message) error {
 		return fmt.Errorf("[innerBroadcast] Cannot marshal message: %s", err)
 	}
 
-	doByzantine := false
-	if instance.byzantine {
-		rand1 := rand.New(rand.NewSource(time.Now().UnixNano()))
-		doIt := rand1.Intn(3) // go byzantine about 1/3 of the time
-		if doIt == 1 {
-			doByzantine = true
-		}
-	}
-
-	// testing byzantine fault.
-	if doByzantine {
-		rand2 := rand.New(rand.NewSource(time.Now().UnixNano()))
-		ignoreidx := rand2.Intn(instance.N)
-		for i := 0; i < instance.N; i++ {
-			if i != ignoreidx && uint64(i) != instance.id { //Pick a random replica and do not send message
-				instance.consumer.unicast(msgRaw, uint64(i))
-			} else {
-				logger.Debugf("PBFT byzantine: not broadcasting to replica %v", i)
-			}
-		}
-	} else {
-		instance.consumer.broadcast(msgRaw)
-	}
+	instance.consumer.broadcast(msgRaw)
 	return nil
 }
 

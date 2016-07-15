@@ -20,7 +20,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	gp "google/protobuf"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -38,43 +37,13 @@ func init() {
 	logging.SetLevel(logging.DEBUG, "")
 }
 
-func TestEnvOverride(t *testing.T) {
-	config := loadConfig()
-
-	key := "general.mode"               // for a key that exists
-	envName := "CORE_PBFT_GENERAL_MODE" // env override name
-	overrideValue := "overide_test"     // value to override default value with
-
-	// test key
-	if ok := config.IsSet("general.mode"); !ok {
-		t.Fatalf("Cannot test env override because \"%s\" does not seem to be set", key)
-	}
-
-	os.Setenv(envName, overrideValue)
-	// The override config value will cause other calls to fail unless unset.
-	defer func() {
-		os.Unsetenv(envName)
-	}()
-
-	if ok := config.IsSet("general.mode"); !ok {
-		t.Fatalf("Env override in place, and key \"%s\" is not set", key)
-	}
-
-	// read key
-	configVal := config.GetString("general.mode")
-	if configVal != overrideValue {
-		t.Fatalf("Env override in place, expected key \"%s\" to be \"%s\" but instead got \"%s\"", key, overrideValue, configVal)
-	}
-
-}
-
 func TestMaliciousPrePrepare(t *testing.T) {
 	mock := &omniProto{
 		broadcastImpl: func(msgPayload []byte) {
 			t.Fatalf("Expected to ignore malicious pre-prepare")
 		},
 	}
-	instance := newPbftCore(1, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(1, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 	defer instance.close()
 	instance.replicaCount = 5
 
@@ -97,7 +66,7 @@ func TestWrongReplicaID(t *testing.T) {
 			return nil
 		},
 	}
-	instance := newPbftCore(1, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(1, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 
 	chainTxMsg := createOcMsgWithChainTx(1)
 	req := &Request{
@@ -126,7 +95,7 @@ func TestIncompletePayload(t *testing.T) {
 			return nil
 		},
 	}
-	instance := newPbftCore(1, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(1, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 	defer instance.close()
 	instance.replicaCount = 5
 
@@ -185,10 +154,10 @@ func TestCheckpoint(t *testing.T) {
 	finishWait := &sync.WaitGroup{}
 
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", 2)
-	config.Set("general.logmultiplier", 2)
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	execReq := func(iter int64) {
@@ -354,7 +323,7 @@ func TestInconsistentPrePrepare(t *testing.T) {
 
 // This test is designed to detect a conflation of S and S' from the paper in the view change
 func TestViewChangeWatermarksMovement(t *testing.T) {
-	instance := newPbftCore(0, loadConfig(), &omniProto{
+	instance := newPbftCore(0, loadConfig().PbftConfig, &omniProto{
 		viewChangeImpl: func(v uint64) {},
 		skipToImpl: func(s uint64, id []byte, replicas []uint64) {
 			t.Fatalf("Should not have attempted to initiate state transfer")
@@ -477,10 +446,10 @@ func TestViewChangeCheckpointSelection(t *testing.T) {
 
 func TestViewChange(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", 2)
-	config.Set("general.logmultiplier", 2)
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	execReq := func(iter int64) {
@@ -663,10 +632,10 @@ func TestNewViewTimeout(t *testing.T) {
 	millisUntilTimeout := time.Duration(800)
 
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.timeout.request", "400ms")
-	config.Set("general.timeout.viewchange", "800ms")
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.RequestTimeout = 400 * time.Millisecond
+	config.ViewchangeTimeout = 800 * time.Millisecond
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	replica1Disabled := false
@@ -724,9 +693,10 @@ func TestViewChangeUpdateSeqNo(t *testing.T) {
 	millisUntilTimeout := 400 * time.Millisecond
 
 	validatorCount := 4
-	config.Set("general.timeout.request", "400ms")
-	config.Set("general.timeout.viewchange", "400ms")
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.RequestTimeout = millisUntilTimeout
+	config.ViewchangeTimeout = millisUntilTimeout
+	net := makePBFTNetwork(validatorCount, &config)
 	for _, pe := range net.pbftEndpoints {
 		pe.pbft.lastExec = 99
 		pe.pbft.h = 99 / pe.pbft.K * pe.pbft.K
@@ -769,7 +739,7 @@ func TestSendQueueThrottling(t *testing.T) {
 	prePreparesSent := 0
 
 	mock := &omniProto{}
-	instance := newPbftCore(0, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(0, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 	instance.f = 1
 	instance.K = 2
 	instance.L = 4
@@ -801,7 +771,7 @@ func TestSendQueueOrdering(t *testing.T) {
 	prePreparesSent := 0
 
 	mock := &omniProto{}
-	instance := newPbftCore(0, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(0, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 	instance.f = 1
 	instance.K = 2
 	instance.L = 100
@@ -852,7 +822,7 @@ func TestSendQueueOrdering(t *testing.T) {
 // From issue #687
 func TestWitnessCheckpointOutOfBounds(t *testing.T) {
 	mock := &omniProto{}
-	instance := newPbftCore(1, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(1, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 	instance.f = 1
 	instance.K = 2
 	instance.L = 4
@@ -877,7 +847,7 @@ func TestWitnessCheckpointOutOfBounds(t *testing.T) {
 // From issue #687
 func TestWitnessFallBehindMissingPrePrepare(t *testing.T) {
 	mock := &omniProto{}
-	instance := newPbftCore(1, loadConfig(), mock, &inertTimerFactory{})
+	instance := newPbftCore(1, loadConfig().PbftConfig, mock, &inertTimerFactory{})
 	instance.f = 1
 	instance.K = 2
 	instance.L = 4
@@ -895,10 +865,10 @@ func TestWitnessFallBehindMissingPrePrepare(t *testing.T) {
 
 func TestFallBehind(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", 2)
-	config.Set("general.logmultiplier", 2)
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	execReq := func(iter int64, skipThree bool) {
@@ -1046,10 +1016,10 @@ func TestRequestTimerDuringViewChange(t *testing.T) {
 // submitted should also be executed on all replicas.
 func TestReplicaCrash1(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", 2)
-	config.Set("general.logmultiplier", 2)
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	mkreq := func(n int64) *Request {
@@ -1069,7 +1039,7 @@ func TestReplicaCrash1(t *testing.T) {
 
 	for id := 0; id < 2; id++ {
 		pe := net.pbftEndpoints[id]
-		pe.pbft = newPbftCore(uint64(id), loadConfig(), pe.sc, events.NewTimerFactoryImpl(pe.manager))
+		pe.pbft = newPbftCore(uint64(id), loadConfig().PbftConfig, pe.sc, events.NewTimerFactoryImpl(pe.manager))
 		pe.manager.SetReceiver(pe.pbft)
 		pe.pbft.N = 4
 		pe.pbft.f = (4 - 1) / 3
@@ -1099,12 +1069,12 @@ func TestReplicaCrash1(t *testing.T) {
 // messages to all but replica 1.
 func TestReplicaCrash2(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.timeout.request", "800ms")
-	config.Set("general.timeout.viewchange", "800ms")
-	config.Set("general.K", 2)
-	config.Set("general.logmultiplier", 2)
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.RequestTimeout = 800 * time.Millisecond
+	config.ViewchangeTimeout = 800 * time.Millisecond
+	config.K = 2
+	config.Lmultiplier = 2
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	filterMsg := true
@@ -1169,10 +1139,10 @@ func TestReplicaCrash2(t *testing.T) {
 // triggered to get vp3 up to speed
 func TestReplicaCrash3(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", 2)
-	config.Set("general.logmultiplier", 2)
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	twoOffline := false
@@ -1207,8 +1177,8 @@ func TestReplicaCrash3(t *testing.T) {
 	// Create new pbft instances to restore from persistence
 	for id := 0; id < 2; id++ {
 		pe := net.pbftEndpoints[id]
-		config := loadConfig()
-		config.Set("general.K", "2")
+		config := loadConfig().PbftConfig
+		config.K = 2
 		pe.pbft.close()
 		pe.pbft = newPbftCore(uint64(id), config, pe.sc, events.NewTimerFactoryImpl(pe.manager))
 		pe.manager.SetReceiver(pe.pbft)
@@ -1283,7 +1253,7 @@ func TestReplicaPersistQSet(t *testing.T) {
 			return r, nil
 		},
 	}
-	p := newPbftCore(1, loadConfig(), stack, &inertTimerFactory{})
+	p := newPbftCore(1, loadConfig().PbftConfig, stack, &inertTimerFactory{})
 	req := &Request{
 		Timestamp: &gp.Timestamp{Seconds: 1, Nanos: 0},
 		Payload:   []byte("foo"),
@@ -1298,7 +1268,7 @@ func TestReplicaPersistQSet(t *testing.T) {
 	})
 	p.close()
 
-	p = newPbftCore(1, loadConfig(), stack, &inertTimerFactory{})
+	p = newPbftCore(1, loadConfig().PbftConfig, stack, &inertTimerFactory{})
 	if !p.prePrepared(hashReq(req), 0, 1) {
 		t.Errorf("did not restore qset properly")
 	}
@@ -1316,7 +1286,7 @@ func TestReplicaPersistDelete(t *testing.T) {
 			delete(persist, key)
 		},
 	}
-	p := newPbftCore(1, loadConfig(), stack, &inertTimerFactory{})
+	p := newPbftCore(1, loadConfig().PbftConfig, stack, &inertTimerFactory{})
 	p.reqStore["a"] = &Request{}
 	p.persistRequest("a")
 	if len(persist) != 1 {
@@ -1329,16 +1299,16 @@ func TestReplicaPersistDelete(t *testing.T) {
 }
 
 func TestNilCurrentExec(t *testing.T) {
-	p := newPbftCore(1, loadConfig(), &omniProto{}, &inertTimerFactory{})
+	p := newPbftCore(1, loadConfig().PbftConfig, &omniProto{}, &inertTimerFactory{})
 	p.execDoneSync() // Per issue 1538, this would cause a Nil pointer dereference
 }
 
 func TestNetworkNullRequests(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.timeout.nullrequest", "200ms")
-	config.Set("general.timeout.request", "500ms")
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.NullRequestTimeout = 200 * time.Millisecond
+	config.RequestTimeout = 500 * time.Millisecond
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	msg := createPbftRequestWithChainTx(1, 0)
@@ -1362,10 +1332,10 @@ func TestNetworkNullRequests(t *testing.T) {
 
 func TestNetworkNullRequestMissing(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.timeout.nullrequest", "200ms")
-	config.Set("general.timeout.request", "500ms")
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.NullRequestTimeout = 200 * time.Millisecond
+	config.RequestTimeout = 500 * time.Millisecond
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	net.pbftEndpoints[0].pbft.nullRequestTimeout = 0
@@ -1391,12 +1361,12 @@ func TestNetworkNullRequestMissing(t *testing.T) {
 
 func TestNetworkPeriodicViewChange(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", "2")
-	config.Set("general.logmultiplier", "2")
-	config.Set("general.timeout.request", "500ms")
-	config.Set("general.viewchangeperiod", "1")
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	config.RequestTimeout = 500 * time.Millisecond
+	config.ViewchangePeriod = 1
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	for n := 1; n < 6; n++ {
@@ -1420,12 +1390,12 @@ func TestNetworkPeriodicViewChange(t *testing.T) {
 
 func TestNetworkPeriodicViewChangeMissing(t *testing.T) {
 	validatorCount := 4
-	config := loadConfig()
-	config.Set("general.K", "2")
-	config.Set("general.logmultiplier", "2")
-	config.Set("general.timeout.request", "500ms")
-	config.Set("general.viewchangeperiod", "1")
-	net := makePBFTNetwork(validatorCount, config)
+	config := loadConfig().PbftConfig
+	config.K = 2
+	config.Lmultiplier = 2
+	config.RequestTimeout = 500 * time.Millisecond
+	config.ViewchangePeriod = 1
+	net := makePBFTNetwork(validatorCount, &config)
 	defer net.stop()
 
 	net.pbftEndpoints[0].pbft.viewChangePeriod = 0
@@ -1452,7 +1422,7 @@ func TestNetworkPeriodicViewChangeMissing(t *testing.T) {
 // TestViewChangeCannotExecuteToCheckpoint tests a replica mid-execution, which receives a view change to a checkpoint above its watermarks
 // but does _not_ have enough commit certificates to reach the checkpoint. state should transfer
 func TestViewChangeCannotExecuteToCheckpoint(t *testing.T) {
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		broadcastImpl:       func(b []byte) {},
 		getStateImpl:        func() []byte { return []byte("state") },
 		signImpl:            func(b []byte) ([]byte, error) { return b, nil },
@@ -1517,7 +1487,7 @@ func TestViewChangeCannotExecuteToCheckpoint(t *testing.T) {
 // TestViewChangeCanExecuteToCheckpoint tests a replica mid-execution, which receives a view change to a checkpoint above its watermarks
 // but which has enough commit certificates to reach the checkpoint. State should not transfer and executions should trigger the view change
 func TestViewChangeCanExecuteToCheckpoint(t *testing.T) {
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		broadcastImpl: func(b []byte) {},
 		getStateImpl:  func() []byte { return []byte("state") },
 		signImpl:      func(b []byte) ([]byte, error) { return b, nil },
@@ -1585,7 +1555,7 @@ func TestViewChangeCanExecuteToCheckpoint(t *testing.T) {
 }
 
 func TestViewWithOldSeqNos(t *testing.T) {
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		broadcastImpl: func(b []byte) {},
 		signImpl:      func(b []byte) ([]byte, error) { return b, nil },
 		verifyImpl:    func(senderID uint64, signature []byte, message []byte) error { return nil },
@@ -1650,7 +1620,7 @@ func TestViewWithOldSeqNos(t *testing.T) {
 
 func TestViewChangeDuringExecution(t *testing.T) {
 	skipped := false
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		viewChangeImpl: func(v uint64) {},
 		skipToImpl: func(s uint64, id []byte, replicas []uint64) {
 			skipped = true
@@ -1720,7 +1690,7 @@ func TestViewChangeDuringExecution(t *testing.T) {
 
 func TestStateTransferredToOldPoint(t *testing.T) {
 	skipped := false
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		skipToImpl: func(s uint64, id []byte, replicas []uint64) {
 			skipped = true
 		},
@@ -1746,7 +1716,7 @@ func TestStateTransferredToOldPoint(t *testing.T) {
 }
 
 func TestStateNetworkMovesOnDuringSlowStateTransfer(t *testing.T) {
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		skipToImpl:          func(s uint64, id []byte, replicas []uint64) {},
 		invalidateStateImpl: func() {},
 		//broadcastImpl:       func(b []byte) {},
@@ -1774,7 +1744,7 @@ func TestStateNetworkMovesOnDuringSlowStateTransfer(t *testing.T) {
 func TestCheckpointDiffersFromQuorum(t *testing.T) {
 	invalidated := false
 	skipped := false
-	instance := newPbftCore(3, loadConfig(), &omniProto{
+	instance := newPbftCore(3, loadConfig().PbftConfig, &omniProto{
 		//broadcastImpl:       func(b []byte) { viewChangeSent = true },
 		//signImpl:            func(b []byte) ([]byte, error) { return b, nil },
 		//verifyImpl:          func(senderID uint64, signature []byte, message []byte) error { return nil },

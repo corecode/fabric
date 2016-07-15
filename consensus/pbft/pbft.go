@@ -32,28 +32,17 @@ import (
 
 const configPrefix = "CORE_PBFT"
 
-var config *viper.Viper
-
-func init() {
-	config = loadConfig()
-}
-
 // New creates a new Obc* instance that provides the Consenter interface.
 // Internally, it uses an opaque pbft-core instance.
 func New(stack consensus.Stack) consensus.Consenter {
 	handle, _, _ := stack.GetNetworkHandles()
 	id, _ := getValidatorID(handle)
 
-	switch strings.ToLower(config.GetString("general.mode")) {
-	case "batch":
-		return newObcBatch(id, config, stack)
-	default:
-		panic(fmt.Errorf("Invalid PBFT mode: %s", config.GetString("general.mode")))
-	}
+	return newObcBatch(id, loadConfig(), stack)
 }
 
-func loadConfig() (config *viper.Viper) {
-	config = viper.New()
+func loadConfig() BatchConfig {
+	config := viper.New()
 
 	// for environment variables
 	config.SetEnvPrefix(configPrefix)
@@ -76,7 +65,24 @@ func loadConfig() (config *viper.Viper) {
 	if err != nil {
 		panic(fmt.Errorf("Error reading %s plugin config: %s", configPrefix, err))
 	}
-	return
+
+	bconfig := BatchConfig{
+		PbftConfig: PbftConfig{
+			N:                       config.GetInt("general.N"),
+			F:                       config.GetInt("general.f"),
+			K:                       uint64(config.GetInt("general.K")),
+			Lmultiplier:             uint64(config.GetInt("general.logmultiplier")),
+			ViewchangePeriod:        uint64(config.GetInt("general.viewchangeperiod")),
+			RequestTimeout:          config.GetDuration("general.timeout.request"),
+			ViewchangeResendTimeout: config.GetDuration("general.timeout.resendviewchange"),
+			ViewchangeTimeout:       config.GetDuration("general.timeout.viewchange"),
+			NullRequestTimeout:      config.GetDuration("general.timeout.nullrequest"),
+		},
+		BatchSize:    config.GetInt("general.batchsize"),
+		BatchTimeout: config.GetDuration("general.timeout.batch"),
+		Outstanding:  config.GetInt("general.outstanding"),
+	}
+	return bconfig
 }
 
 // Returns the uint64 ID corresponding to a peer handle
