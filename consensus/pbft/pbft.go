@@ -32,19 +32,10 @@ import (
 
 const configPrefix = "CORE_PBFT"
 
-var pluginInstance consensus.Consenter // singleton service
 var config *viper.Viper
 
 func init() {
 	config = loadConfig()
-}
-
-// GetPlugin returns the handle to the Consenter singleton
-func GetPlugin(c consensus.Stack) consensus.Consenter {
-	if pluginInstance == nil {
-		pluginInstance = New(c)
-	}
-	return pluginInstance
 }
 
 // New creates a new Obc* instance that provides the Consenter interface.
