@@ -213,19 +213,7 @@ func (a sortableUint64Slice) Less(i, j int) bool {
 // constructors
 // =============================================================================
 
-type PbftConfig struct {
-	N                       int
-	F                       int
-	K                       uint64
-	Lmultiplier             uint64
-	ViewchangePeriod        uint64
-	RequestTimeout          time.Duration
-	ViewchangeResendTimeout time.Duration
-	ViewchangeTimeout       time.Duration
-	NullRequestTimeout      time.Duration
-}
-
-func newPbftCore(id uint64, config PbftConfig, consumer innerStack, etf events.TimerFactory) *pbftCore {
+func newPbftCore(id uint64, config *PbftConfig, consumer innerStack, etf events.TimerFactory) *pbftCore {
 	instance := &pbftCore{}
 	instance.id = id
 	instance.consumer = consumer
@@ -234,24 +222,24 @@ func newPbftCore(id uint64, config PbftConfig, consumer innerStack, etf events.T
 	instance.vcResendTimer = etf.CreateTimer()
 	instance.nullRequestTimer = etf.CreateTimer()
 
-	instance.N = config.N
-	instance.f = config.F
+	instance.N = int(config.N)
+	instance.f = int(config.F)
 	if instance.f*3+1 > instance.N {
 		panic(fmt.Sprintf("need at least %d enough replicas to tolerate %d byzantine faults, but only %d replicas configured", instance.f*3+1, instance.f, instance.N))
 	}
 
 	instance.K = config.K
 
-	if config.Lmultiplier < 2 {
+	if config.LMultiplier < 2 {
 		panic("Log multiplier must be greater than or equal to 2")
 	}
-	instance.L = config.Lmultiplier * instance.K // log size
+	instance.L = config.LMultiplier * instance.K // log size
 	instance.viewChangePeriod = config.ViewchangePeriod
 
-	instance.requestTimeout = config.RequestTimeout
-	instance.vcResendTimeout = config.ViewchangeResendTimeout
-	instance.newViewTimeout = config.ViewchangeTimeout
-	instance.nullRequestTimeout = config.NullRequestTimeout
+	instance.requestTimeout = time.Duration(config.RequestTimeout) * time.Nanosecond
+	instance.vcResendTimeout = time.Duration(config.ViewchangeResendTimeout) * time.Nanosecond
+	instance.newViewTimeout = time.Duration(config.ViewchangeTimeout) * time.Nanosecond
+	instance.nullRequestTimeout = time.Duration(config.NullRequestTimeout) * time.Nanosecond
 
 	instance.activeView = true
 	instance.replicaCount = instance.N

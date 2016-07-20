@@ -73,18 +73,21 @@ func (c *consensusStack) GetBlockHeadMetadata() ([]byte, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-type config struct {
+type flags struct {
 	listenAddr    string
 	telemetryAddr string
 	certFile      string
 	keyFile       string
 	dataDir       string
 	verbose       string
+	init          string
 }
 
 //
 func main() {
-	var c config
+	var c flags
+
+	flag.StringVar(&c.init, "init", "", "initialized instance from pbft config `file`")
 
 	flag.StringVar(&c.listenAddr, "addr", ":6100", "`addr`ess/port of service")
 	flag.StringVar(&c.telemetryAddr, "telemetry", ":7100", "`addr`ess of telemetry/profiler")
@@ -101,9 +104,48 @@ func main() {
 	}
 	logging.SetLevel(level, "")
 
+	if c.init != "" {
+		err = initInstance(c)
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
+
+	serve(c)
+}
+
+func initInstance(c flags) error {
+	config, err := ReadJsonConfig(c.init)
+	if err != nil {
+		return err
+	}
+
+	err = os.Mkdir(c.dataDir, 0755)
+	if err != nil {
+		return err
+	}
+
+	p := persist.New(c.dataDir)
+	err = SaveConfig(p, config)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("initialized new peer")
+	return nil
+}
+
+func serve(c flags) {
 	if c.dataDir == "" {
 		fmt.Fprintln(os.Stderr, "need data directory")
 		os.Exit(1)
+	}
+
+	persist := persist.New(c.dataDir)
+	config, err := RestoreConfig(persist)
+	if err != nil {
+		panic(err)
 	}
 
 	if c.telemetryAddr != "" {
@@ -121,17 +163,17 @@ func main() {
 		panic(err)
 	}
 	s := &consensusStack{
-		Persist: persist.New(c.dataDir),
+		Persist: persist,
 		Server:  server.New(100, conn),
 	}
-	s.Backend, err = backend.New(s.Persist, conn)
+	s.Backend, err = backend.New(config.Peers, conn)
 	if err != nil {
 		panic(err)
 	}
 
-	pbft := pbft.New(s)
-	s.Server.RegisterConsenter(pbft)
+	pbft := pbft.New(config.Consensus, s)
 	s.Backend.RegisterConsenter(pbft)
+	s.Server.RegisterConsenter(pbft)
 
 	// block forever
 	select {}

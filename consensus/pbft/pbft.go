@@ -34,11 +34,11 @@ const configPrefix = "CORE_PBFT"
 
 // New creates a new Obc* instance that provides the Consenter interface.
 // Internally, it uses an opaque pbft-core instance.
-func New(stack consensus.Stack) consensus.Consenter {
+func New(config *BatchConfig, stack consensus.Stack) *obcBatch {
 	handle, _, _ := stack.GetNetworkHandles()
 	id, _ := getValidatorID(handle)
 
-	return newObcBatch(id, loadConfig(), stack)
+	return newObcBatch(id, config, stack)
 }
 
 func loadConfig() BatchConfig {
@@ -67,20 +67,20 @@ func loadConfig() BatchConfig {
 	}
 
 	bconfig := BatchConfig{
-		PbftConfig: PbftConfig{
-			N:                       config.GetInt("general.N"),
-			F:                       config.GetInt("general.f"),
+		PbftConfig: &PbftConfig{
+			N:                       uint64(config.GetInt("general.N")),
+			F:                       uint64(config.GetInt("general.f")),
 			K:                       uint64(config.GetInt("general.K")),
-			Lmultiplier:             uint64(config.GetInt("general.logmultiplier")),
+			LMultiplier:             uint64(config.GetInt("general.logmultiplier")),
 			ViewchangePeriod:        uint64(config.GetInt("general.viewchangeperiod")),
-			RequestTimeout:          config.GetDuration("general.timeout.request"),
-			ViewchangeResendTimeout: config.GetDuration("general.timeout.resendviewchange"),
-			ViewchangeTimeout:       config.GetDuration("general.timeout.viewchange"),
-			NullRequestTimeout:      config.GetDuration("general.timeout.nullrequest"),
+			RequestTimeout:          uint64(config.GetDuration("general.timeout.request")),
+			ViewchangeResendTimeout: uint64(config.GetDuration("general.timeout.resendviewchange")),
+			ViewchangeTimeout:       uint64(config.GetDuration("general.timeout.viewchange")),
+			NullRequestTimeout:      uint64(config.GetDuration("general.timeout.nullrequest")),
 		},
-		BatchSize:    config.GetInt("general.batchsize"),
-		BatchTimeout: config.GetDuration("general.timeout.batch"),
-		Outstanding:  config.GetInt("general.outstanding"),
+		BatchSize:    uint64(config.GetInt("general.batchsize")),
+		BatchTimeout: uint64(config.GetDuration("general.timeout.batch")),
+		Outstanding:  uint64(config.GetInt("general.outstanding")),
 	}
 	return bconfig
 }

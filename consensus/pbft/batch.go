@@ -80,14 +80,7 @@ type batchMessageEvent batchMessage
 // batchTimerEvent is sent when the batch timer expires
 type batchTimerEvent struct{}
 
-type BatchConfig struct {
-	PbftConfig
-	BatchSize    int
-	BatchTimeout time.Duration
-	Outstanding  int
-}
-
-func newObcBatch(id uint64, config BatchConfig, stack consensus.Stack) *obcBatch {
+func newObcBatch(id uint64, config *BatchConfig, stack consensus.Stack) *obcBatch {
 	op := &obcBatch{
 		obcGeneric: obcGeneric{stack: stack},
 	}
@@ -104,10 +97,10 @@ func newObcBatch(id uint64, config BatchConfig, stack consensus.Stack) *obcBatch
 	op.externalEventReceiver.manager = op.manager
 	op.broadcaster = newBroadcaster(id, op.pbft.N, op.pbft.f, stack)
 
-	op.batchSize = config.BatchSize
+	op.batchSize = int(config.BatchSize)
 	op.batchStore = nil
-	op.batchTimeout = config.BatchTimeout
-	outstandingSize := config.Outstanding
+	op.batchTimeout = time.Duration(config.BatchTimeout) * time.Nanosecond
+	outstandingSize := int(config.Outstanding)
 	logger.Infof("PBFT Batch outstanding requests = %d", outstandingSize)
 	logger.Infof("PBFT Batch size = %d", op.batchSize)
 	logger.Infof("PBFT Batch timeout = %v", op.batchTimeout)

@@ -31,7 +31,6 @@ import (
 
 	"github.com/hyperledger/fabric/consensus"
 	"github.com/hyperledger/fabric/consensus-peer/connection"
-	"github.com/hyperledger/fabric/consensus-peer/persist"
 	pb "github.com/hyperledger/fabric/protos"
 	"github.com/op/go-logging"
 )
@@ -40,7 +39,6 @@ var logger = logging.MustGetLogger("backend")
 
 type Backend struct {
 	consensus consensus.Consenter
-	persist   *persist.Persist
 	conn      *connection.Manager
 
 	lock  sync.Mutex
@@ -71,24 +69,15 @@ func (pi peerInfoSlice) Swap(i, j int) {
 	pi[i], pi[j] = pi[j], pi[i]
 }
 
-func New(persist *persist.Persist, conn *connection.Manager) (*Backend, error) {
+func New(peers map[string][]byte, conn *connection.Manager) (*Backend, error) {
 	c := &Backend{
 		conn:     conn,
-		persist:  persist,
 		peers:    make(map[pb.PeerID]chan<- *pb.Message),
 		peerInfo: make(map[string]*PeerInfo),
 	}
 
-	prefix := "config.peers."
-	peers, err := c.persist.ReadStateSet(prefix)
-	if err != nil {
-		return nil, err
-	}
-
 	var peerInfo []*PeerInfo
-	for key, cert := range peers {
-		addr := key[len(prefix):]
-
+	for addr, cert := range peers {
 		pi, err := connection.NewPeerInfo(addr, cert)
 		if err != nil {
 			return nil, err

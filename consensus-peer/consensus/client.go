@@ -17,11 +17,8 @@ limitations under the License.
 package consensus
 
 import (
-	"encoding/pem"
-	"fmt"
-	"io/ioutil"
-
 	"github.com/hyperledger/fabric/consensus-peer/connection"
+	"github.com/hyperledger/fabric/consensus-peer/crypto"
 	"google.golang.org/grpc"
 )
 
@@ -42,25 +39,9 @@ func Dial(addr string, cert []byte, opts ...grpc.DialOption) (AtomicBroadcastCli
 }
 
 func DialPem(addr string, certFile string, opts ...grpc.DialOption) (AtomicBroadcastClient, error) {
-	certBytes, err := ioutil.ReadFile(certFile)
+	cert, err := crypto.ParseCertPEM(certFile)
 	if err != nil {
 		return nil, err
 	}
-
-	var b *pem.Block
-	for {
-		b, certBytes = pem.Decode(certBytes)
-		if b == nil {
-			break
-		}
-		if b.Type == "CERTIFICATE" {
-			break
-		}
-	}
-
-	if b == nil {
-		return nil, fmt.Errorf("no certificate found")
-	}
-
-	return Dial(addr, b.Bytes, opts...)
+	return Dial(addr, cert, opts...)
 }
