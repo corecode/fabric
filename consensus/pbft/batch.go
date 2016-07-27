@@ -99,7 +99,7 @@ func newObcBatch(id uint64, config *BatchConfig, stack consensus.Stack) *obcBatc
 
 	op.batchSize = int(config.BatchSize)
 	op.batchStore = nil
-	op.batchTimeout = time.Duration(config.BatchTimeout) * time.Nanosecond
+	op.batchTimeout = time.Duration(config.BatchTimeout * float32(time.Second))
 	outstandingSize := int(config.Outstanding)
 	logger.Infof("PBFT Batch outstanding requests = %d", outstandingSize)
 	logger.Infof("PBFT Batch size = %d", op.batchSize)

@@ -39,15 +39,15 @@ var _ = fmt.Errorf
 var _ = math.Inf
 
 type PbftConfig struct {
-	N                       uint64 `protobuf:"varint,1,opt,name=n" json:"n,omitempty"`
-	F                       uint64 `protobuf:"varint,2,opt,name=f" json:"f,omitempty"`
-	K                       uint64 `protobuf:"varint,3,opt,name=k" json:"k,omitempty"`
-	LMultiplier             uint64 `protobuf:"varint,4,opt,name=l_multiplier" json:"l_multiplier,omitempty"`
-	ViewchangePeriod        uint64 `protobuf:"varint,5,opt,name=viewchange_period" json:"viewchange_period,omitempty"`
-	RequestTimeout          uint64 `protobuf:"varint,6,opt,name=request_timeout" json:"request_timeout,omitempty"`
-	ViewchangeResendTimeout uint64 `protobuf:"varint,7,opt,name=viewchange_resend_timeout" json:"viewchange_resend_timeout,omitempty"`
-	ViewchangeTimeout       uint64 `protobuf:"varint,8,opt,name=viewchange_timeout" json:"viewchange_timeout,omitempty"`
-	NullRequestTimeout      uint64 `protobuf:"varint,9,opt,name=null_request_timeout" json:"null_request_timeout,omitempty"`
+	N                       uint64  `protobuf:"varint,1,opt,name=n" json:"n,omitempty"`
+	F                       uint64  `protobuf:"varint,2,opt,name=f" json:"f,omitempty"`
+	K                       uint64  `protobuf:"varint,3,opt,name=k" json:"k,omitempty"`
+	LMultiplier             uint64  `protobuf:"varint,4,opt,name=l_multiplier" json:"l_multiplier,omitempty"`
+	ViewchangePeriod        uint64  `protobuf:"varint,5,opt,name=viewchange_period" json:"viewchange_period,omitempty"`
+	RequestTimeout          float32 `protobuf:"fixed32,6,opt,name=request_timeout" json:"request_timeout,omitempty"`
+	ViewchangeResendTimeout float32 `protobuf:"fixed32,7,opt,name=viewchange_resend_timeout" json:"viewchange_resend_timeout,omitempty"`
+	ViewchangeTimeout       float32 `protobuf:"fixed32,8,opt,name=viewchange_timeout" json:"viewchange_timeout,omitempty"`
+	NullRequestTimeout      float32 `protobuf:"fixed32,9,opt,name=null_request_timeout" json:"null_request_timeout,omitempty"`
 }
 
 func (m *PbftConfig) Reset()         { *m = PbftConfig{} }
@@ -57,7 +57,7 @@ func (*PbftConfig) ProtoMessage()    {}
 type BatchConfig struct {
 	PbftConfig   *PbftConfig `protobuf:"bytes,1,opt,name=pbft_config" json:"pbft_config,omitempty"`
 	BatchSize    uint64      `protobuf:"varint,2,opt,name=batch_size" json:"batch_size,omitempty"`
-	BatchTimeout uint64      `protobuf:"varint,3,opt,name=batch_timeout" json:"batch_timeout,omitempty"`
+	BatchTimeout float32     `protobuf:"fixed32,3,opt,name=batch_timeout" json:"batch_timeout,omitempty"`
 	Outstanding  uint64      `protobuf:"varint,4,opt,name=outstanding" json:"outstanding,omitempty"`
 }
 

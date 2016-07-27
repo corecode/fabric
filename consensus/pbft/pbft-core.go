@@ -236,10 +236,10 @@ func newPbftCore(id uint64, config *PbftConfig, consumer innerStack, etf events.
 	instance.L = config.LMultiplier * instance.K // log size
 	instance.viewChangePeriod = config.ViewchangePeriod
 
-	instance.requestTimeout = time.Duration(config.RequestTimeout) * time.Nanosecond
-	instance.vcResendTimeout = time.Duration(config.ViewchangeResendTimeout) * time.Nanosecond
-	instance.newViewTimeout = time.Duration(config.ViewchangeTimeout) * time.Nanosecond
-	instance.nullRequestTimeout = time.Duration(config.NullRequestTimeout) * time.Nanosecond
+	instance.requestTimeout = time.Duration(config.RequestTimeout * float32(time.Second))
+	instance.vcResendTimeout = time.Duration(config.ViewchangeResendTimeout * float32(time.Second))
+	instance.newViewTimeout = time.Duration(config.ViewchangeTimeout * float32(time.Second))
+	instance.nullRequestTimeout = time.Duration(config.NullRequestTimeout * float32(time.Second))
 
 	instance.activeView = true
 	instance.replicaCount = instance.N

@@ -24,15 +24,15 @@ message pbft_config {
         uint64 k = 3;
         uint64 l_multiplier = 4;
         uint64 viewchange_period = 5;
-        uint64 request_timeout = 6;
-        uint64 viewchange_resend_timeout = 7;
-        uint64 viewchange_timeout = 8;
-        uint64 null_request_timeout = 9;
+        float request_timeout = 6;
+        float viewchange_resend_timeout = 7;
+        float viewchange_timeout = 8;
+        float null_request_timeout = 9;
 };
 
 message batch_config {
         pbft_config pbft_config = 1;
         uint64 batch_size = 2;
-        uint64 batch_timeout = 3;
+        float batch_timeout = 3;
         uint64 outstanding = 4;
 };

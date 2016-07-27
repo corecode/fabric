@@ -73,13 +73,13 @@ func loadConfig() BatchConfig {
 			K:                       uint64(config.GetInt("general.K")),
 			LMultiplier:             uint64(config.GetInt("general.logmultiplier")),
 			ViewchangePeriod:        uint64(config.GetInt("general.viewchangeperiod")),
-			RequestTimeout:          uint64(config.GetDuration("general.timeout.request")),
-			ViewchangeResendTimeout: uint64(config.GetDuration("general.timeout.resendviewchange")),
-			ViewchangeTimeout:       uint64(config.GetDuration("general.timeout.viewchange")),
-			NullRequestTimeout:      uint64(config.GetDuration("general.timeout.nullrequest")),
+			RequestTimeout:          float32(config.GetDuration("general.timeout.request").Seconds()),
+			ViewchangeResendTimeout: float32(config.GetDuration("general.timeout.resendviewchange").Seconds()),
+			ViewchangeTimeout:       float32(config.GetDuration("general.timeout.viewchange").Seconds()),
+			NullRequestTimeout:      float32(config.GetDuration("general.timeout.nullrequest").Seconds()),
 		},
 		BatchSize:    uint64(config.GetInt("general.batchsize")),
-		BatchTimeout: uint64(config.GetDuration("general.timeout.batch")),
+		BatchTimeout: float32(config.GetDuration("general.timeout.batch").Seconds()),
 		Outstanding:  uint64(config.GetInt("general.outstanding")),
 	}
 	return bconfig
