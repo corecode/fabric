@@ -45,6 +45,9 @@ It has these top-level messages:
 	Transaction
 	TransactionBlock
 	TransactionResult
+	Changeset
+	TableChangeset
+	RowChangeset
 	Block
 	BlockchainInfo
 	NonHashData
@@ -52,6 +55,7 @@ It has these top-level messages:
 	PeerID
 	PeerEndpoint
 	PeersMessage
+	PeersAddresses
 	HelloMessage
 	Message
 	Response

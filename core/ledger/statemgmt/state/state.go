@@ -25,6 +25,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/hyperledger/fabric/core/ledger/statemgmt/raw"
 	"github.com/hyperledger/fabric/core/ledger/statemgmt/trie"
+	"github.com/hyperledger/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 )
@@ -259,6 +260,25 @@ func (state *State) getStateDelta() *statemgmt.StateDelta {
 	return state.stateDelta
 }
 
+// GetChangeset returns a fabric API Changeset for the current transaction.
+func (state *State) GetChangeset() *protos.Changeset {
+	cs := &protos.Changeset{}
+
+	for _, id := range state.stateDelta.GetUpdatedChaincodeIds(true) {
+		tcs := &protos.TableChangeset{Name: id}
+		for row, val := range state.stateDelta.GetUpdates(id) {
+			rcs := &protos.RowChangeset{
+				Key:       []byte(row),
+				Value:     val.Value,
+				PrevValue: val.PreviousValue,
+			}
+			tcs.Rows = append(tcs.Rows, rcs)
+		}
+		cs.Tables = append(cs.Tables, tcs)
+	}
+	return cs
+}
+
 // GetSnapshot returns a snapshot of the global state for the current block. stateSnapshot.Release()
 // must be called once you are done.
 func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapshot) (*StateSnapshot, error) {
@@ -301,6 +321,18 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gor
 			blockNumber, state.historyStateDeltaSize)
 	}
 	logger.Debug("state.addChangesForPersistence()...finished")
+}
+
+func (state *State) ApplyChangeset(changes []*protos.Changeset) {
+	state.stateDelta = statemgmt.NewStateDelta()
+	for _, cs := range changes {
+		for _, tcs := range cs.Tables {
+			for _, rcs := range tcs.Rows {
+				state.stateDelta.Set(tcs.Name, string(rcs.Key), rcs.Value, rcs.PrevValue)
+			}
+		}
+	}
+	state.updateStateImpl = true
 }
 
 // ApplyStateDelta applies already prepared stateDelta to the existing state.

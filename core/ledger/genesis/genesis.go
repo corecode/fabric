@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/hyperledger/fabric/protos"
 	"github.com/op/go-logging"
 )
 
@@ -40,9 +41,8 @@ func MakeGenesis() error {
 
 		if ledger.GetBlockchainSize() == 0 {
 			genesisLogger.Info("Creating genesis block.")
-			if makeGenesisError = ledger.BeginTxBatch(0); makeGenesisError == nil {
-				makeGenesisError = ledger.CommitTxBatch(0, nil, nil, nil)
-			}
+			block := protos.NewBlock(nil, nil)
+			makeGenesisError = ledger.AppendBlock(block)
 		}
 	})
 	return makeGenesisError

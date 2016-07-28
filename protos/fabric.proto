@@ -74,6 +74,25 @@ message TransactionResult {
   ChaincodeEvent chaincodeEvent = 5;
 }
 
+message changeset {
+    repeated table_changeset tables = 1;
+    // some signatures here
+}
+
+message table_changeset {
+    string name = 1;
+    repeated row_changeset rows = 2;
+}
+
+message row_changeset {
+    bytes key = 1;
+    bytes value = 2;
+    bytes prev_value = 3;
+//  TODO: replace with version ident at some point
+//    bytes prev_hash = 4;
+//    uint64 version = 5;
+}
+
 // Block carries The data that describes a block in the blockchain.
 // version - Version used to track any protocol changes.
 // timestamp - The time at which the block or transaction order
@@ -94,6 +113,7 @@ message Block {
     bytes previousBlockHash = 5;
     bytes consensusMetadata = 6;
     NonHashData nonHashData = 7;
+    repeated changeset changes = 9;
 }
 
 // Contains information about the blockchain ledger such as height, current

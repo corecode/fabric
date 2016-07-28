@@ -234,6 +234,47 @@ func (m *TransactionResult) GetChaincodeEvent() *ChaincodeEvent {
 	return nil
 }
 
+type Changeset struct {
+	Tables []*TableChangeset `protobuf:"bytes,1,rep,name=tables" json:"tables,omitempty"`
+}
+
+func (m *Changeset) Reset()         { *m = Changeset{} }
+func (m *Changeset) String() string { return proto.CompactTextString(m) }
+func (*Changeset) ProtoMessage()    {}
+
+func (m *Changeset) GetTables() []*TableChangeset {
+	if m != nil {
+		return m.Tables
+	}
+	return nil
+}
+
+type TableChangeset struct {
+	Name string          `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Rows []*RowChangeset `protobuf:"bytes,2,rep,name=rows" json:"rows,omitempty"`
+}
+
+func (m *TableChangeset) Reset()         { *m = TableChangeset{} }
+func (m *TableChangeset) String() string { return proto.CompactTextString(m) }
+func (*TableChangeset) ProtoMessage()    {}
+
+func (m *TableChangeset) GetRows() []*RowChangeset {
+	if m != nil {
+		return m.Rows
+	}
+	return nil
+}
+
+type RowChangeset struct {
+	Key       []byte `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value     []byte `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	PrevValue []byte `protobuf:"bytes,3,opt,name=prev_value,proto3" json:"prev_value,omitempty"`
+}
+
+func (m *RowChangeset) Reset()         { *m = RowChangeset{} }
+func (m *RowChangeset) String() string { return proto.CompactTextString(m) }
+func (*RowChangeset) ProtoMessage()    {}
+
 // Block carries The data that describes a block in the blockchain.
 // version - Version used to track any protocol changes.
 // timestamp - The time at which the block or transaction order
@@ -254,6 +295,7 @@ type Block struct {
 	PreviousBlockHash []byte                     `protobuf:"bytes,5,opt,name=previousBlockHash,proto3" json:"previousBlockHash,omitempty"`
 	ConsensusMetadata []byte                     `protobuf:"bytes,6,opt,name=consensusMetadata,proto3" json:"consensusMetadata,omitempty"`
 	NonHashData       *NonHashData               `protobuf:"bytes,7,opt,name=nonHashData" json:"nonHashData,omitempty"`
+	Changes           []*Changeset               `protobuf:"bytes,9,rep,name=changes" json:"changes,omitempty"`
 }
 
 func (m *Block) Reset()         { *m = Block{} }
@@ -277,6 +319,13 @@ func (m *Block) GetTransactions() []*Transaction {
 func (m *Block) GetNonHashData() *NonHashData {
 	if m != nil {
 		return m.NonHashData
+	}
+	return nil
+}
+
+func (m *Block) GetChanges() []*Changeset {
+	if m != nil {
+		return m.Changes
 	}
 	return nil
 }

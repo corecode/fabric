@@ -140,32 +140,22 @@ func (ledger *Ledger) GetTXBatchPreviewBlockInfo(id interface{},
 	return info, nil
 }
 
-// CommitTxBatch - gets invoked when the current transaction-batch needs to be committed
+// AppendBlock - gets invoked when a new block was received by consensus.
 // This function returns successfully iff the transactions details and state changes (that
 // may have happened during execution of this transaction-batch) have been committed to permanent storage
-func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Transaction, transactionResults []*protos.TransactionResult, metadata []byte) error {
-	err := ledger.checkValidIDCommitORRollback(id)
-	if err != nil {
-		return err
-	}
 
-	stateHash, err := ledger.state.GetHash()
-	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
-		return err
-	}
-
+func (ledger *Ledger) AppendBlock(block *protos.Block) error {
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
-	block := protos.NewBlock(transactions, metadata)
-	block.NonHashData = &protos.NonHashData{}
-	newBlockNumber, err := ledger.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
+	newBlockNumber, err := ledger.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, nil, writeBatch)
 	if err != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
+
+	ledger.state.ApplyChangeset(block.Changes)
+
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
@@ -180,9 +170,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	ledger.blockchain.blockPersistenceStatus(true)
 
 	sendProducerBlockEvent(block)
-	if len(transactionResults) != 0 {
-		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
-	}
 	return nil
 }
 
@@ -207,6 +194,10 @@ func (ledger *Ledger) TxBegin(txUUID string) {
 // If txSuccessful is false, the state changes made by the transaction are discarded
 func (ledger *Ledger) TxFinished(txUUID string, txSuccessful bool) {
 	ledger.state.TxFinish(txUUID, txSuccessful)
+}
+
+func (ledger *Ledger) GetTxChangeset() *protos.Changeset {
+	return ledger.state.GetChangeset()
 }
 
 /////////////////// world-state related methods /////////////////////////////////////

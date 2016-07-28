@@ -181,7 +181,7 @@ type handlerMap struct {
 type HandlerFactory func(MessageHandlerCoordinator, ChatStream, bool, MessageHandler) (MessageHandler, error)
 
 // EngineFactory for creating new engines
-type EngineFactory func() (*helper.Engine, error)
+type EngineFactory func(helper.LedgerPeer) (*helper.Engine, error)
 
 // PeerImpl implementation of the Peer service
 type PeerImpl struct {
@@ -196,14 +196,9 @@ type PeerImpl struct {
 	discPersist    bool
 }
 
-// TransactionProccesor responsible for processing of Transactions
-type TransactionProccesor interface {
-	ProcessTransactionMsg(*pb.Transaction) *pb.Response
-}
-
-// Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
+// Engine Responsible for Ordering changesets and producing blocks
 type Engine interface {
-	TransactionProccesor
+	NewChangeset(cs *pb.Changeset) error
 }
 
 // NewPeerWithHandler returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
@@ -260,7 +255,7 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	}
 	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
-	peer.engine, err = engFactory()
+	peer.engine, err = engFactory(peer)
 	if err != nil {
 		return nil, err
 	}
@@ -497,11 +492,6 @@ func (p *PeerImpl) SendTransactionsToPeer(peerAddress string, transaction *pb.Tr
 	return response
 }
 
-// sendTransactionsToLocalEngine send the transaction to the local engine (This Peer is a validator)
-func (p *PeerImpl) sendTransactionsToLocalEngine(transaction *pb.Transaction) *pb.Response {
-	return p.engine.ProcessTransactionMsg(transaction)
-}
-
 func (p *PeerImpl) ensureConnected() {
 	touchPeriod := viper.GetDuration("peer.discovery.touchPeriod")
 	touchMaxNodes := viper.GetInt("peer.discovery.touchMaxNodes")
@@ -605,17 +595,6 @@ func (p *PeerImpl) handleChat(ctx context.Context, stream ChatStream, initiatedS
 			//return err
 		}
 	}
-}
-
-//ExecuteTransaction executes transactions decides to do execute in dev or prod mode
-func (p *PeerImpl) ExecuteTransaction(transaction *pb.Transaction) (response *pb.Response) {
-	if p.isValidator {
-		response = p.sendTransactionsToLocalEngine(transaction)
-	} else {
-		peerAddresses := p.discHelper.GetRandomNodes(1)
-		response = p.SendTransactionsToPeer(peerAddresses[0], transaction)
-	}
-	return response
 }
 
 // GetPeerEndpoint returns the endpoint for this peer
