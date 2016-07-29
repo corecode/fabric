@@ -142,19 +142,19 @@ func (s *ServerOpenchain) GetState(ctx context.Context, chaincodeID, key string)
 	return s.ledger.GetState(chaincodeID, key, true)
 }
 
-// GetTransactionByUUID returns a transaction matching the specified UUID
-func (s *ServerOpenchain) GetTransactionByUUID(ctx context.Context, txUUID string) (*pb.Transaction, error) {
-	transaction, err := s.ledger.GetTransactionByUUID(txUUID)
-	if err != nil {
-		switch err {
-		case ledger.ErrResourceNotFound:
-			return nil, ErrNotFound
-		default:
-			return nil, fmt.Errorf("Error retrieving transaction from blockchain: %s", err)
-		}
-	}
-	return transaction, nil
-}
+// // GetTransactionByUUID returns a transaction matching the specified UUID
+// func (s *ServerOpenchain) GetTransactionByUUID(ctx context.Context, txUUID string) (*pb.Transaction, error) {
+// 	transaction, err := s.ledger.GetTransactionByUUID(txUUID)
+// 	if err != nil {
+// 		switch err {
+// 		case ledger.ErrResourceNotFound:
+// 			return nil, ErrNotFound
+// 		default:
+// 			return nil, fmt.Errorf("Error retrieving transaction from blockchain: %s", err)
+// 		}
+// 	}
+// 	return transaction, nil
+// }
 
 // GetPeers returns a list of all peer nodes currently connected to the target peer.
 func (s *ServerOpenchain) GetPeers(ctx context.Context, e *google_protobuf.Empty) (*pb.PeersMessage, error) {

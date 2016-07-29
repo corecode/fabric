@@ -689,34 +689,34 @@ func (s *ServerOpenchainREST) GetBlockByNumber(rw web.ResponseWriter, req *web.R
 	encoder.Encode(block)
 }
 
-// GetTransactionByUUID returns a transaction matching the specified UUID
-func (s *ServerOpenchainREST) GetTransactionByUUID(rw web.ResponseWriter, req *web.Request) {
-	// Parse out the transaction UUID
-	txUUID := req.PathParams["uuid"]
+// // GetTransactionByUUID returns a transaction matching the specified UUID
+// func (s *ServerOpenchainREST) GetTransactionByUUID(rw web.ResponseWriter, req *web.Request) {
+// 	// Parse out the transaction UUID
+// 	txUUID := req.PathParams["uuid"]
 
-	// Retrieve the transaction matching the UUID
-	tx, err := s.server.GetTransactionByUUID(context.Background(), txUUID)
+// 	// Retrieve the transaction matching the UUID
+// 	tx, err := s.server.GetTransactionByUUID(context.Background(), txUUID)
 
-	encoder := json.NewEncoder(rw)
+// 	encoder := json.NewEncoder(rw)
 
-	// Check for Error
-	if err != nil {
-		switch err {
-		case ErrNotFound:
-			rw.WriteHeader(http.StatusNotFound)
-			encoder.Encode(restResult{Error: fmt.Sprintf("Transaction %s is not found.", txUUID)})
-		default:
-			rw.WriteHeader(http.StatusInternalServerError)
-			encoder.Encode(restResult{Error: fmt.Sprintf("Error retrieving transaction %s: %s.", txUUID, err)})
-			restLogger.Errorf("Error retrieving transaction %s: %s", txUUID, err)
-		}
-	} else {
-		// Return existing transaction
-		rw.WriteHeader(http.StatusOK)
-		encoder.Encode(tx)
-		restLogger.Infof("Successfully retrieved transaction: %s", txUUID)
-	}
-}
+// 	// Check for Error
+// 	if err != nil {
+// 		switch err {
+// 		case ErrNotFound:
+// 			rw.WriteHeader(http.StatusNotFound)
+// 			encoder.Encode(restResult{Error: fmt.Sprintf("Transaction %s is not found.", txUUID)})
+// 		default:
+// 			rw.WriteHeader(http.StatusInternalServerError)
+// 			encoder.Encode(restResult{Error: fmt.Sprintf("Error retrieving transaction %s: %s.", txUUID, err)})
+// 			restLogger.Errorf("Error retrieving transaction %s: %s", txUUID, err)
+// 		}
+// 	} else {
+// 		// Return existing transaction
+// 		rw.WriteHeader(http.StatusOK)
+// 		encoder.Encode(tx)
+// 		restLogger.Infof("Successfully retrieved transaction: %s", txUUID)
+// 	}
+// }
 
 // Deploy first builds the chaincode package and subsequently deploys it to the
 // blockchain.
@@ -1741,7 +1741,7 @@ func buildOpenchainRESTRouter() *web.Router {
 	// The /chaincode endpoint which superceedes the /devops endpoint from above
 	router.Post("/chaincode", (*ServerOpenchainREST).ProcessChaincode)
 
-	router.Get("/transactions/:uuid", (*ServerOpenchainREST).GetTransactionByUUID)
+	// router.Get("/transactions/:uuid", (*ServerOpenchainREST).GetTransactionByUUID)
 
 	router.Get("/network/peers", (*ServerOpenchainREST).GetPeers)
 

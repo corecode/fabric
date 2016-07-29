@@ -164,7 +164,7 @@ func (stateDelta *StateDelta) ComputeCryptoHash() []byte {
 		}
 	}
 	hashingContent := buffer.Bytes()
-	logger.Debugf("computing hash on %#v", hashingContent)
+	// logger.Debugf("computing hash on %#v", hashingContent)
 	return util.ComputeCryptoHash(hashingContent)
 }
 

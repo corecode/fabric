@@ -17,11 +17,9 @@ limitations under the License.
 package chaincode
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
 
 	"github.com/hyperledger/fabric/core/ledger"
@@ -178,27 +176,27 @@ func ExecuteTransactions(ctxt context.Context, cname ChainName, xacts []*pb.Tran
 // 	return nil, err
 // }
 
-var errFailedToGetChainCodeSpecForTransaction = errors.New("Failed to get ChainCodeSpec from Transaction")
+// var errFailedToGetChainCodeSpecForTransaction = errors.New("Failed to get ChainCodeSpec from Transaction")
 
-func getTimeout(cID *pb.ChaincodeID) (time.Duration, error) {
-	ledger, err := ledger.GetLedger()
-	if err == nil {
-		chaincodeID := cID.Name
-		txUUID, err := ledger.GetState(chaincodeID, "github.com_openblockchain_obc-peer_chaincode_id", true)
-		if err == nil {
-			tx, err := ledger.GetTransactionByUUID(string(txUUID))
-			if err == nil {
-				chaincodeDeploymentSpec := &pb.ChaincodeDeploymentSpec{}
-				proto.Unmarshal(tx.Payload, chaincodeDeploymentSpec)
-				chaincodeSpec := chaincodeDeploymentSpec.GetChaincodeSpec()
-				timeout := time.Duration(time.Duration(chaincodeSpec.Timeout) * time.Millisecond)
-				return timeout, nil
-			}
-		}
-	}
+// func getTimeout(cID *pb.ChaincodeID) (time.Duration, error) {
+// 	ledger, err := ledger.GetLedger()
+// 	if err == nil {
+// 		chaincodeID := cID.Name
+// 		txUUID, err := ledger.GetState(chaincodeID, "github.com_openblockchain_obc-peer_chaincode_id", true)
+// 		if err == nil {
+// 			tx, err := ledger.GetTransactionByUUID(string(txUUID))
+// 			if err == nil {
+// 				chaincodeDeploymentSpec := &pb.ChaincodeDeploymentSpec{}
+// 				proto.Unmarshal(tx.Payload, chaincodeDeploymentSpec)
+// 				chaincodeSpec := chaincodeDeploymentSpec.GetChaincodeSpec()
+// 				timeout := time.Duration(time.Duration(chaincodeSpec.Timeout) * time.Millisecond)
+// 				return timeout, nil
+// 			}
+// 		}
+// 	}
 
-	return -1, errFailedToGetChainCodeSpecForTransaction
-}
+// 	return -1, errFailedToGetChainCodeSpecForTransaction
+// }
 
 func markTxBegin(ledger *ledger.Ledger, t *pb.Transaction) {
 	if t.Type == pb.Transaction_CHAINCODE_QUERY {

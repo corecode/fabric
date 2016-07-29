@@ -243,7 +243,14 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocks
 				logger.Debugf("Deleting data node key = %#v", dataNode.dataKey)
 				writeBatch.DeleteCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes())
 			} else {
-				logger.Debugf("Adding data node with value = %#v", dataNode.value)
+				if logger.IsEnabledFor(logging.DEBUG) {
+					v := dataNode.value
+					trail := ""
+					if len(v) >= 100 {
+						v = v[:100]
+					}
+					logger.Debugf("Adding data node with value = %#v%s", v, trail)
+				}
 				writeBatch.PutCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
 			}
 		}

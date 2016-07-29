@@ -42,7 +42,8 @@ type ChainName string
 
 const (
 	// DefaultChain is the name of the default chain.
-	DefaultChain ChainName = "default"
+	DefaultChain      ChainName = "default"
+	chaincodeRegistry string    = "$chaincode"
 	// DevModeUserRunsChaincode property allows user to run chaincode in development environment
 	DevModeUserRunsChaincode       string = "dev"
 	chaincodeStartupTimeoutDefault int    = 5000
@@ -460,7 +461,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(context context.Context, t *pb.
 	}
 	chaincodeSupport.runningChaincodes.Unlock()
 
-	var depTx *pb.Transaction
+	depTx := &pb.Transaction{}
 
 	//extract depTx so we can initialize hander.deployTXSecContext
 	//we need it only after container is launched and only if this is not a deploy tx
@@ -474,19 +475,29 @@ func (chaincodeSupport *ChaincodeSupport) Launch(context context.Context, t *pb.
 	//         5) query successfully retrives committed tx and calls sendInitOrReady
 	// See issue #710
 
-	if t.Type != pb.Transaction_CHAINCODE_DEPLOY {
-		ledger, ledgerErr := ledger.GetLedger()
-		if ledgerErr != nil {
-			return cID, cMsg, fmt.Errorf("Failed to get handle to ledger (%s)", ledgerErr)
-		}
+	ledger, ledgerErr := ledger.GetLedger()
+	if ledgerErr != nil {
+		return cID, cMsg, fmt.Errorf("Failed to get handle to ledger (%s)", ledgerErr)
+	}
 
-		//hopefully we are restarting from existing image and the deployed transaction exists
-		depTx, ledgerErr = ledger.GetTransactionByUUID(chaincode)
-		if ledgerErr != nil {
+	switch t.Type {
+	case pb.Transaction_CHAINCODE_DEPLOY:
+		txRaw, err := proto.Marshal(t)
+		if err != nil {
+			return cID, cMsg, fmt.Errorf("Failed to marshal deployment transaction: %s", err)
+		}
+		ledger.SetState(chaincodeRegistry, chaincode, txRaw)
+	default:
+		txRaw, err := ledger.GetState(chaincodeRegistry, chaincode, true)
+		if err != nil {
 			return cID, cMsg, fmt.Errorf("Could not get deployment transaction for %s - %s", chaincode, ledgerErr)
 		}
-		if depTx == nil {
+		if len(txRaw) == 0 {
 			return cID, cMsg, fmt.Errorf("deployment transaction does not exist for %s", chaincode)
+		}
+		err = proto.Unmarshal(txRaw, depTx)
+		if err != nil {
+			return cID, cMsg, fmt.Errorf("deployment transaction invalid for chaincode %s: %s", chaincode, err)
 		}
 		if nil != chaincodeSupport.secHelper {
 			var err error
@@ -497,7 +508,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(context context.Context, t *pb.
 			}
 		}
 		//Get lang from original deployment
-		err := proto.Unmarshal(depTx.Payload, cds)
+		err = proto.Unmarshal(depTx.Payload, cds)
 		if err != nil {
 			return cID, cMsg, fmt.Errorf("failed to unmarshal deployment transactions for %s - %s", chaincode, err)
 		}

@@ -139,7 +139,15 @@ func (state *State) GetRangeScanIterator(chaincodeID string, startKey string, en
 
 // Set sets state to given value for chaincodeID and key. Does not immideatly writes to DB
 func (state *State) Set(chaincodeID string, key string, value []byte) error {
-	logger.Debugf("set() chaincodeID=[%s], key=[%s], value=[%#v]", chaincodeID, key, value)
+	if logger.IsEnabledFor(logging.DEBUG) {
+		trail := ""
+		v := value
+		if len(v) >= 100 {
+			v = v[:100]
+			trail = "..."
+		}
+		logger.Debugf("set() chaincodeID=[%s], key=[%s], value=[%#v%s]", chaincodeID, key, v, trail)
+	}
 	if !state.txInProgress() {
 		panic("State can be changed only in context of a tx.")
 	}
