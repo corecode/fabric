@@ -1,8 +1,26 @@
+/*
+Copyright IBM Corp. 2016 All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+		 http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/core/chaincode"
 	"github.com/hyperledger/fabric/core/chaincode/platforms"
@@ -26,12 +44,12 @@ var (
 
 func initNVP() (err error) {
 	if err = initPeerClient(); err != nil {
-		appLogger.Debug("Failed deploying [%s]", err)
+		appLogger.Debugf("Failed deploying [%s]", err)
 		return
 
 	}
 	if err = initCryptoClients(); err != nil {
-		appLogger.Debug("Failed deploying [%s]", err)
+		appLogger.Debugf("Failed deploying [%s]", err)
 		return
 	}
 
@@ -144,10 +162,10 @@ func deployInternal(deployer crypto.Client, adminCert crypto.CertificateHandler)
 
 	resp, err = processTransaction(transaction)
 
-	appLogger.Debug("resp [%s]", resp.String())
+	appLogger.Debugf("resp [%s]", resp.String())
 
 	chaincodeName = cds.ChaincodeSpec.ChaincodeID.Name
-	appLogger.Debug("ChaincodeName [%s]", chaincodeName)
+	appLogger.Debugf("ChaincodeName [%s]", chaincodeName)
 
 	return
 }
@@ -168,7 +186,10 @@ func assignOwnershipInternal(invoker crypto.Client, invokerCert crypto.Certifica
 		return nil, err
 	}
 
-	chaincodeInput := &pb.ChaincodeInput{Function: "assign", Args: []string{asset, string(newOwnerCert.GetCertificate())}}
+	chaincodeInput := &pb.ChaincodeInput{
+		Function: "assign",
+		Args:     []string{asset, base64.StdEncoding.EncodeToString(newOwnerCert.GetCertificate())},
+	}
 	chaincodeInputRaw, err := proto.Marshal(chaincodeInput)
 	if err != nil {
 		return nil, err
@@ -217,7 +238,10 @@ func transferOwnershipInternal(owner crypto.Client, ownerCert crypto.Certificate
 		return nil, err
 	}
 
-	chaincodeInput := &pb.ChaincodeInput{Function: "transfer", Args: []string{asset, string(newOwnerCert.GetCertificate())}}
+	chaincodeInput := &pb.ChaincodeInput{
+		Function: "transfer",
+		Args:     []string{asset, base64.StdEncoding.EncodeToString(newOwnerCert.GetCertificate())},
+	}
 	chaincodeInputRaw, err := proto.Marshal(chaincodeInput)
 	if err != nil {
 		return nil, err
@@ -277,7 +301,7 @@ func getChaincodeBytes(spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, err
 	mode := viper.GetString("chaincode.mode")
 	var codePackageBytes []byte
 	if mode != chaincode.DevModeUserRunsChaincode {
-		appLogger.Debug("Received build request for chaincode spec: %v", spec)
+		appLogger.Debugf("Received build request for chaincode spec: %v", spec)
 		var err error
 		if err = checkSpec(spec); err != nil {
 			return nil, err
@@ -286,7 +310,7 @@ func getChaincodeBytes(spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, err
 		codePackageBytes, err = container.GetChaincodePackageBytes(spec)
 		if err != nil {
 			err = fmt.Errorf("Error getting chaincode package bytes: %s", err)
-			appLogger.Error(fmt.Sprintf("%s", err))
+			appLogger.Errorf("%s", err)
 			return nil, err
 		}
 	}

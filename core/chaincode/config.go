@@ -43,7 +43,7 @@ func SetupTestLogging() {
 		logging.SetLevel(level, "server")
 		logging.SetLevel(level, "peer")
 	} else {
-		chaincodeLogger.Warning("Log level not recognized '%s', defaulting to %s: %s", viper.GetString("logging.peer"), logging.ERROR, err)
+		chaincodeLogger.Warningf("Log level not recognized '%s', defaulting to %s: %s", viper.GetString("logging.peer"), logging.ERROR, err)
 		logging.SetLevel(logging.ERROR, "main")
 		logging.SetLevel(logging.ERROR, "server")
 		logging.SetLevel(logging.ERROR, "peer")
@@ -55,13 +55,12 @@ func SetupTestConfig() {
 	flag.Parse()
 
 	// Now set the configuration file
-	viper.SetEnvPrefix("HYPERLEDGER")
+	viper.SetEnvPrefix("CORE")
 	viper.AutomaticEnv()
 	replacer := strings.NewReplacer(".", "_")
 	viper.SetEnvKeyReplacer(replacer)
-	viper.SetConfigName("core")          // name of config file (without extension)
+	viper.SetConfigName("chaincodetest") // name of config file (without extension)
 	viper.AddConfigPath("./")            // path to look for the config file in
-	viper.AddConfigPath("./../../peer/") // path to look for the config file in
 	err := viper.ReadInConfig()          // Find and read the config file
 	if err != nil {                      // Handle errors reading the config file
 		panic(fmt.Errorf("Fatal error config file: %s \n", err))
@@ -71,6 +70,5 @@ func SetupTestConfig() {
 
 	// Set the number of maxprocs
 	var numProcsDesired = viper.GetInt("peer.gomaxprocs")
-	chaincodeLogger.Debug("setting Number of procs to %d, was %d\n", numProcsDesired, runtime.GOMAXPROCS(2))
-
+	chaincodeLogger.Debugf("setting Number of procs to %d, was %d\n", numProcsDesired, runtime.GOMAXPROCS(2))
 }

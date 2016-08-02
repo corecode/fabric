@@ -56,5 +56,11 @@ func (dataNode *dataNode) getValue() []byte {
 }
 
 func (dataNode *dataNode) String() string {
-	return fmt.Sprintf("dataKey=[%s], value=[%s]", dataNode.dataKey, string(dataNode.value))
+	s := string(dataNode.value)
+	trail := ""
+	if len(s) >= 100 {
+		s = s[:100]
+		trail = "..."
+	}
+	return fmt.Sprintf("dataKey=[%s], value=[%s%s]", dataNode.dataKey, s, trail)
 }

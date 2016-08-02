@@ -19,6 +19,7 @@ package buckettree
 import (
 	"github.com/golang/protobuf/proto"
 	openchainUtil "github.com/hyperledger/fabric/core/util"
+	"github.com/op/go-logging"
 )
 
 type bucketHashCalculator struct {
@@ -49,7 +50,15 @@ func (c *bucketHashCalculator) computeCryptoHash() []byte {
 		c.currentChaincodeID = ""
 		c.dataNodes = nil
 	}
-	logger.Debug("Hashable content for bucket [%s]: length=%d, contentInStringForm=[%s]", c.bucketKey, len(c.hashingData), string(c.hashingData))
+	if logger.IsEnabledFor(logging.DEBUG) {
+		trail := ""
+		s := string(c.hashingData)
+		if len(s) >= 100 {
+			s = s[:100]
+			trail = "..."
+		}
+		logger.Debugf("Hashable content for bucket [%s]: length=%d, contentInStringForm=[%s, %s]", c.bucketKey, len(c.hashingData), s, trail)
+	}
 	if c.hashingData == nil {
 		return nil
 	}

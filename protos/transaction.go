@@ -18,6 +18,7 @@ package protos
 
 import (
 	"fmt"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger/fabric/core/util"
 )
@@ -26,7 +27,7 @@ import (
 func (transaction *Transaction) Bytes() ([]byte, error) {
 	data, err := proto.Marshal(transaction)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Error marshalling transaction: %s", err))
+		logger.Errorf("Error marshalling transaction: %s", err)
 		return nil, fmt.Errorf("Could not marshal transaction: %s", err)
 	}
 	return data, nil
@@ -82,7 +83,7 @@ func NewChaincodeDeployTransaction(chaincodeDeploymentSpec *ChaincodeDeploymentS
 	//}
 	data, err := proto.Marshal(chaincodeDeploymentSpec)
 	if err != nil {
-		logger.Error(fmt.Sprintf("Error mashalling payload for chaincode deployment: %s", err))
+		logger.Errorf("Error mashalling payload for chaincode deployment: %s", err)
 		return nil, fmt.Errorf("Could not marshal payload for chaincode deployment: %s", err)
 	}
 	transaction.Payload = data

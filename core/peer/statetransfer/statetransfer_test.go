@@ -25,10 +25,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hyperledger/fabric/consensus"
 	configSetup "github.com/hyperledger/fabric/core/config"
+	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/protos"
+
+	"github.com/op/go-logging"
 )
+
+func init() {
+	logging.SetLevel(logging.DEBUG, "")
+}
+
+var AllFailures = [...]mockResponse{Timeout, Corrupt, OutOfOrder}
 
 type testPartialStack struct {
 	*MockRemoteHashLedgerDirectory
@@ -47,12 +55,14 @@ func newPartialStack(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) Partial
 	}
 }
 
-func newTestStateTransfer(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) *StateTransferState {
-	return NewStateTransferState(newPartialStack(ml, rld))
+func newTestStateTransfer(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) *coordinatorImpl {
+	ci := NewCoordinatorImpl(newPartialStack(ml, rld)).(*coordinatorImpl)
+	ci.Start()
+	return ci
 }
 
-func newTestThreadlessStateTransfer(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) *StateTransferState {
-	return threadlessNewStateTransferState(newPartialStack(ml, rld))
+func newTestThreadlessStateTransfer(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) *coordinatorImpl {
+	return NewCoordinatorImpl(newPartialStack(ml, rld)).(*coordinatorImpl)
 }
 
 type MockRemoteHashLedgerDirectory struct {
@@ -65,7 +75,7 @@ func (mrls *MockRemoteHashLedgerDirectory) GetMockRemoteLedgerByPeerID(peerID *p
 }
 
 func createRemoteLedgers(low, high uint64) *MockRemoteHashLedgerDirectory {
-	rols := make(map[protos.PeerID]consensus.ReadOnlyLedger)
+	rols := make(map[protos.PeerID]peer.BlockChainAccessor)
 
 	for i := low; i <= high; i++ {
 		peerID := &protos.PeerID{
@@ -77,22 +87,27 @@ func createRemoteLedgers(low, high uint64) *MockRemoteHashLedgerDirectory {
 	return &MockRemoteHashLedgerDirectory{&HashLedgerDirectory{rols}}
 }
 
-func executeStateTransfer(sts *StateTransferState, ml *MockLedger, blockNumber, sequenceNumber uint64, mrls *MockRemoteHashLedgerDirectory) error {
+func executeStateTransfer(sts *coordinatorImpl, ml *MockLedger, blockNumber, sequenceNumber uint64, mrls *MockRemoteHashLedgerDirectory) error {
 
 	for peerID := range mrls.remoteLedgers {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = blockNumber + 1
 	}
 
-	result := sts.CompletionChannel()
+	var err error
 
 	blockHash := SimpleGetBlockHash(blockNumber)
-	sts.AddTarget(blockNumber, blockHash, nil, nil)
+	for i := 0; i < 100; i++ {
+		var recoverable bool
+		err, recoverable = sts.SyncToTarget(blockNumber, blockHash, nil)
+		if err == nil || !recoverable {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+		// Try to sync for up to 10 seconds
+	}
 
-	select {
-	case <-time.After(time.Second * 2):
-		return fmt.Errorf("Timed out waiting for state to catch up, error in state transfer")
-	case <-result:
-		// Do nothing, continue the test
+	if err != nil {
+		return err
 	}
 
 	if size := ml.GetBlockchainSize(); size != blockNumber+1 {
@@ -153,13 +168,59 @@ func TestCatchupSimple(t *testing.T) {
 	mrls := createRemoteLedgers(1, 3)
 
 	// Test from blockheight of 1, with valid genesis block
-	ml := NewMockLedger(mrls, nil)
+	ml := NewMockLedger(mrls, nil, t)
 	ml.PutBlock(0, SimpleGetBlock(0))
 
 	sts := newTestStateTransfer(ml, mrls)
 	defer sts.Stop()
 	if err := executeStateTransfer(sts, ml, 7, 10, mrls); nil != err {
 		t.Fatalf("Simplest case: %s", err)
+	}
+
+}
+
+func TestCatchupWithLowMaxDeltas(t *testing.T) {
+	mrls := createRemoteLedgers(1, 3)
+
+	// Test from blockheight of 1, with valid genesis block
+	deltasTransferred := uint64(0)
+	blocksTransferred := uint64(0)
+	ml := NewMockLedger(mrls, func(request mockRequest, peerID *protos.PeerID) mockResponse {
+		if request == SyncDeltas {
+			deltasTransferred++
+		}
+
+		if request == SyncBlocks {
+			blocksTransferred++
+		}
+
+		return Normal
+	}, t)
+	ml.PutBlock(0, SimpleGetBlock(0))
+
+	sts := newTestStateTransfer(ml, mrls)
+	maxRange := uint64(3)
+	sts.maxStateDeltaRange = maxRange
+	sts.maxBlockRange = maxRange
+	defer sts.Stop()
+
+	targetBlock := uint64(7)
+	if err := executeStateTransfer(sts, ml, targetBlock, 10, mrls); nil != err {
+		t.Fatalf("Without deltas case: %s", err)
+	}
+
+	existingBlocks := uint64(1)
+	targetTransferred := (targetBlock - existingBlocks) / maxRange
+	if (targetBlock-existingBlocks)%maxRange != 0 {
+		targetTransferred++
+	}
+
+	if deltasTransferred != targetTransferred {
+		t.Errorf("Expected %d state deltas transferred, got %d", targetTransferred, deltasTransferred)
+	}
+
+	if blocksTransferred != targetTransferred {
+		t.Errorf("Expected %d state blocks transferred, got %d", targetTransferred, blocksTransferred)
 	}
 
 }
@@ -176,12 +237,17 @@ func TestCatchupWithoutDeltas(t *testing.T) {
 		}
 
 		return Normal
-	})
+	}, t)
 	ml.PutBlock(0, SimpleGetBlock(0))
 
-	sts := newTestStateTransfer(ml, mrls)
-	sts.MaxStateDeltas = 0
-	defer sts.Stop()
+	sts := NewCoordinatorImpl(newPartialStack(ml, mrls)).(*coordinatorImpl)
+	sts.maxStateDeltas = 0
+
+	done := make(chan struct{})
+	go func() {
+		sts.blockThread()
+		close(done)
+	}()
 
 	if err := executeStateTransfer(sts, ml, 7, 10, mrls); nil != err {
 		t.Fatalf("Without deltas case: %s", err)
@@ -191,16 +257,29 @@ func TestCatchupWithoutDeltas(t *testing.T) {
 		t.Fatalf("State delta retrieval should not occur during this test")
 	}
 
+	sts.Stop()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Timed out waiting for block sync to complete")
+	}
+
+	for i := uint64(0); i <= 7; i++ {
+		if _, err := ml.GetBlockByNumber(i); err != nil {
+			t.Errorf("Expected block %d but got error %s", i, err)
+		}
+	}
 }
 
 func TestCatchupSyncBlocksErrors(t *testing.T) {
-	for _, failureType := range []mockResponse{Timeout, Corrupt} {
+	for _, failureType := range AllFailures {
 		mrls := createRemoteLedgers(1, 3)
 
 		// Test from blockheight of 1 with valid genesis block
 		// Timeouts of 10 milliseconds
 		filter, result := makeSimpleFilter(SyncBlocks, failureType)
-		ml := NewMockLedger(mrls, filter)
+		ml := NewMockLedger(mrls, filter, t)
 
 		ml.PutBlock(0, SimpleGetBlock(0))
 		sts := newTestStateTransfer(ml, mrls)
@@ -219,7 +298,7 @@ func TestCatchupSyncBlocksErrors(t *testing.T) {
 func TestCatchupSyncBlocksAllErrors(t *testing.T) {
 	blockNumber := uint64(10)
 
-	for _, failureType := range []mockResponse{Timeout, Corrupt} {
+	for _, failureType := range AllFailures {
 		mrls := createRemoteLedgers(1, 3)
 
 		// Test from blockheight of 1 with valid genesis block
@@ -235,7 +314,7 @@ func TestCatchupSyncBlocksAllErrors(t *testing.T) {
 
 			return Normal
 		}
-		ml := NewMockLedger(mrls, filter)
+		ml := NewMockLedger(mrls, filter, t)
 
 		ml.PutBlock(0, SimpleGetBlock(0))
 		sts := newTestStateTransfer(ml, mrls)
@@ -246,49 +325,14 @@ func TestCatchupSyncBlocksAllErrors(t *testing.T) {
 			mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = blockNumber + 1
 		}
 
-		failChannel := make(chan struct{})
-		errCount := 0
-
-		protoListener := &ProtoListener{
-			ErroredImpl: func(uint64, []byte, []*protos.PeerID, interface{}, error) {
-				errCount++
-				if errCount == 3 {
-					failChannel <- struct{}{}
-					failChannel <- struct{}{} // Block the state transfer thread until the second read
-				}
-			},
-			CompletedImpl: func(uint64, []byte, []*protos.PeerID, interface{}) {
-				if !succeeding.triggered {
-					t.Fatalf("State transfer should not have completed yet")
-				} else {
-
-				}
-			},
-		}
-
-		complete := sts.CompletionChannel()
-
-		sts.RegisterListener(protoListener)
-
 		blockHash := SimpleGetBlockHash(blockNumber)
-		sts.AddTarget(blockNumber, blockHash, nil, nil)
-
-		select {
-		case <-time.After(time.Second * 2):
-			t.Fatalf("Timed out waiting for state to error out")
-		case <-failChannel:
+		if err, _ := sts.SyncToTarget(blockNumber, blockHash, nil); err == nil {
+			t.Fatalf("State transfer should not have completed yet")
 		}
 
 		succeeding.triggered = true
-		go sts.AddTarget(blockNumber, blockHash, nil, nil)
-
-		<-failChannel // Unblock state transfer
-
-		select {
-		case <-time.After(time.Second * 2):
-			t.Fatalf("Timed out waiting for state to catch up, error in state transfer")
-		case <-complete:
-			// Do nothing, continue the test
+		if err, _ := sts.SyncToTarget(blockNumber, blockHash, nil); err != nil {
+			t.Fatalf("Error completing state transfer")
 		}
 
 		if size := ml.GetBlockchainSize(); size != blockNumber+1 {
@@ -311,7 +355,7 @@ func TestCatchupMissingEarlyChain(t *testing.T) {
 	mrls := createRemoteLedgers(1, 3)
 
 	// Test from blockheight of 5 (with missing blocks 0-3)
-	ml := NewMockLedger(mrls, nil)
+	ml := NewMockLedger(mrls, nil, t)
 	ml.PutBlock(4, SimpleGetBlock(4))
 	sts := newTestStateTransfer(ml, mrls)
 	defer sts.Stop()
@@ -321,13 +365,13 @@ func TestCatchupMissingEarlyChain(t *testing.T) {
 }
 
 func TestCatchupSyncSnapshotError(t *testing.T) {
-	for _, failureType := range []mockResponse{Timeout, Corrupt} {
+	for _, failureType := range AllFailures {
 		mrls := createRemoteLedgers(1, 3)
 
 		// Test from blockheight of 5 (with missing blocks 0-3)
 		// Timeouts of 1 second, also test corrupt snapshot
 		filter, result := makeSimpleFilter(SyncSnapshot, failureType)
-		ml := NewMockLedger(mrls, filter)
+		ml := NewMockLedger(mrls, filter, t)
 		ml.PutBlock(4, SimpleGetBlock(4))
 		sts := newTestStateTransfer(ml, mrls)
 		defer sts.Stop()
@@ -342,13 +386,13 @@ func TestCatchupSyncSnapshotError(t *testing.T) {
 }
 
 func TestCatchupSyncDeltasError(t *testing.T) {
-	for _, failureType := range []mockResponse{Timeout, Corrupt} {
+	for _, failureType := range AllFailures {
 		mrls := createRemoteLedgers(1, 3)
 
 		// Test from blockheight of 5 (with missing blocks 0-3)
 		// Timeouts of 1 second
 		filter, result := makeSimpleFilter(SyncDeltas, failureType)
-		ml := NewMockLedger(mrls, filter)
+		ml := NewMockLedger(mrls, filter, t)
 		ml.PutBlock(4, SimpleGetBlock(4))
 		ml.state = SimpleGetState(4)
 		sts := newTestStateTransfer(ml, mrls)
@@ -361,50 +405,6 @@ func TestCatchupSyncDeltasError(t *testing.T) {
 		if !result.wasTriggered() {
 			t.Fatalf("SyncDeltasError case never simulated a %s", failureType)
 		}
-	}
-}
-
-func TestCatchupSimpleSynchronous(t *testing.T) {
-	mrls := createRemoteLedgers(1, 3)
-
-	for peerID := range mrls.remoteLedgers {
-		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 8
-	}
-
-	// Test from blockheight of 1, with valid genesis block
-	ml := NewMockLedger(mrls, nil)
-	ml.PutBlock(0, SimpleGetBlock(0))
-	sts := newTestStateTransfer(ml, mrls)
-	defer sts.Stop()
-	if err := sts.BlockingAddTarget(7, SimpleGetBlockHash(7), nil); nil != err {
-		t.Fatalf("SimpleSynchronous state transfer failed : %s", err)
-	}
-}
-
-func TestCatchupSimpleSynchronousSuccess(t *testing.T) {
-	mrls := createRemoteLedgers(1, 3)
-
-	for peerID := range mrls.remoteLedgers {
-		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 8
-	}
-
-	// Test from blockheight of 1, with valid genesis block
-	ml := NewMockLedger(mrls, nil)
-	ml.PutBlock(0, SimpleGetBlock(0))
-	sts := newTestStateTransfer(ml, mrls)
-	defer sts.Stop()
-
-	done := make(chan struct{})
-
-	go func() {
-		sts.BlockingUntilSuccessAddTarget(7, SimpleGetBlockHash(7), nil)
-		done <- struct{}{}
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("SimpleSynchronousSuccess state transfer timed out")
 	}
 }
 
@@ -474,13 +474,13 @@ func TestCatchupLaggingChains(t *testing.T) {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 701
 	}
 
-	ml := NewMockLedger(mrls, nil)
+	ml := NewMockLedger(mrls, nil, t)
 	ml.PutBlock(7, SimpleGetBlock(7))
 	if err := executeBlockRecovery(ml, 10, mrls); nil != err {
 		t.Fatalf("TestCatchupLaggingChains short chain failure: %s", err)
 	}
 
-	ml = NewMockLedger(mrls, nil)
+	ml = NewMockLedger(mrls, nil, t)
 	ml.PutBlock(200, SimpleGetBlock(200))
 	// Use a large timeout here because the mock ledger is slow for large blocks
 	if err := executeBlockRecovery(ml, 1000, mrls); nil != err {
@@ -488,8 +488,59 @@ func TestCatchupLaggingChains(t *testing.T) {
 	}
 }
 
+func TestCatchupLaggingWithSmallMaxBlocks(t *testing.T) {
+	mrls := createRemoteLedgers(0, 3)
+
+	for peerID := range mrls.remoteLedgers {
+		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 201
+	}
+
+	maxSyncBlocks := uint64(3)
+	startingBlock := uint64(200)
+
+	syncBlockTries := uint64(0)
+	ml := NewMockLedger(mrls, func(request mockRequest, peerID *protos.PeerID) mockResponse {
+		if request == SyncBlocks {
+			syncBlockTries++
+		}
+
+		return Normal
+	}, t)
+	ml.PutBlock(startingBlock, SimpleGetBlock(startingBlock))
+
+	sts := newTestThreadlessStateTransfer(ml, mrls)
+	sts.BlockRequestTimeout = 1000 * time.Millisecond
+	sts.RecoverDamage = true
+	sts.maxBlockRange = maxSyncBlocks
+	sts.blockVerifyChunkSize = maxSyncBlocks
+
+	w := make(chan struct{})
+
+	go func() {
+		for !sts.verifyAndRecoverBlockchain() {
+		}
+		w <- struct{}{}
+	}()
+
+	select {
+	case <-time.After(time.Second * 2):
+		t.Fatalf("Timed out waiting for blocks to replicate for blockchain")
+	case <-w:
+		// Do nothing, continue the test
+	}
+
+	target := startingBlock / maxSyncBlocks
+	if startingBlock%maxSyncBlocks != 0 {
+		target++
+	}
+
+	if syncBlockTries != target {
+		t.Fatalf("Expected %d calls to sync blocks, but got %d, this indicates maxBlockRange is not being respected", target, syncBlockTries)
+	}
+}
+
 func TestCatchupLaggingChainsErrors(t *testing.T) {
-	for _, failureType := range []mockResponse{Timeout, Corrupt} {
+	for _, failureType := range AllFailures {
 		mrls := createRemoteLedgers(0, 3)
 
 		for peerID := range mrls.remoteLedgers {
@@ -497,7 +548,7 @@ func TestCatchupLaggingChainsErrors(t *testing.T) {
 		}
 
 		filter, result := makeSimpleFilter(SyncBlocks, failureType)
-		ml := NewMockLedger(mrls, filter)
+		ml := NewMockLedger(mrls, filter, t)
 		ml.PutBlock(7, SimpleGetBlock(7))
 		if err := executeBlockRecovery(ml, 10, mrls); nil != err {
 			t.Fatalf("TestCatchupLaggingChainsErrors %s short chain with timeout failure: %s", failureType, err)
@@ -515,14 +566,14 @@ func TestCatchupCorruptChains(t *testing.T) {
 		mrls.GetMockRemoteLedgerByPeerID(&peerID).blockHeight = 701
 	}
 
-	ml := NewMockLedger(mrls, nil)
+	ml := NewMockLedger(mrls, nil, t)
 	ml.PutBlock(7, SimpleGetBlock(7))
 	ml.PutBlock(3, SimpleGetBlock(2))
 	if err := executeBlockRecovery(ml, 10, mrls); nil != err {
 		t.Fatalf("TestCatchupCorruptChains short chain failure: %s", err)
 	}
 
-	ml = NewMockLedger(mrls, nil)
+	ml = NewMockLedger(mrls, nil, t)
 	ml.PutBlock(7, SimpleGetBlock(7))
 	ml.PutBlock(3, SimpleGetBlock(2))
 	defer func() {
@@ -532,85 +583,6 @@ func TestCatchupCorruptChains(t *testing.T) {
 	}()
 	if err := executeBlockRecoveryWithPanic(ml, 10, mrls); nil != err {
 		t.Fatalf("TestCatchupCorruptChains short chain failure: %s", err)
-	}
-}
-
-type listenerHelper struct {
-	resultChannel chan struct{}
-	ProtoListener
-}
-
-func (lh *listenerHelper) Errored(bn uint64, bh []byte, pids []*protos.PeerID, md interface{}, err error) {
-	select {
-	case lh.resultChannel <- struct{}{}:
-	default:
-	}
-}
-
-func TestRegisterUnregisterListener(t *testing.T) {
-	mrls := &MockRemoteHashLedgerDirectory{&HashLedgerDirectory{make(map[protos.PeerID]consensus.ReadOnlyLedger)}}
-
-	ml := NewMockLedger(nil, nil)
-	ml.PutBlock(0, SimpleGetBlock(0))
-	sts := newTestStateTransfer(ml, mrls)
-	defer sts.Stop()
-	sts.DiscoveryThrottleTime = 1 * time.Millisecond
-
-	l1 := &listenerHelper{resultChannel: make(chan struct{})}
-	l2 := &listenerHelper{resultChannel: make(chan struct{})}
-
-	sts.RegisterListener(l1)
-	sts.RegisterListener(l2)
-
-	// Will cause an immediate error loop of errors on state sync, as there are no peerIDs
-	sts.InvalidateState()
-	sts.AddTarget(10, []byte("DUMMY"), nil, nil)
-
-	select {
-	case <-l1.resultChannel:
-		// Everything is good
-	case <-time.After(2 * time.Second):
-		t.Fatalf("Should have received a first notifaction but did not, timed out.")
-	}
-
-	sts.UnregisterListener(l1)
-
-	for i := 0; i < 20; i++ {
-		select {
-		case <-l1.resultChannel:
-			t.Fatalf("Should not have received a notification after deregistration.")
-		case <-l2.resultChannel:
-			// Everything is good
-		case <-time.After(2 * time.Second):
-			t.Fatalf("Should have received continuous notifications, but did not, timed out.")
-
-		}
-	}
-
-}
-
-func TestIdle(t *testing.T) {
-	mrls := createRemoteLedgers(0, 1)
-
-	ml := NewMockLedger(nil, nil)
-	ml.PutBlock(0, SimpleGetBlock(0))
-	sts := newTestStateTransfer(ml, mrls)
-	defer sts.Stop()
-
-	idle := make(chan struct{})
-	go func() {
-		sts.blockUntilIdle()
-		idle <- struct{}{}
-	}()
-
-	select {
-	case <-idle:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("Timed out waiting for state transfer to become idle")
-	}
-
-	if !sts.isIdle() {
-		t.Fatalf("State transfer unblocked from idle but did not remain that way")
 	}
 }
 

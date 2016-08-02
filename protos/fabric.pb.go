@@ -214,16 +214,66 @@ func (m *TransactionBlock) GetTransactions() []*Transaction {
 // result - The return value of the transaction.
 // errorCode - An error code. 5xx will be logged as a failure in the dashboard.
 // error - An error string for logging an issue.
+// chaincodeEvent - any event emitted by a transaction
 type TransactionResult struct {
-	Uuid      string `protobuf:"bytes,1,opt,name=uuid" json:"uuid,omitempty"`
-	Result    []byte `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
-	ErrorCode uint32 `protobuf:"varint,3,opt,name=errorCode" json:"errorCode,omitempty"`
-	Error     string `protobuf:"bytes,4,opt,name=error" json:"error,omitempty"`
+	Uuid           string          `protobuf:"bytes,1,opt,name=uuid" json:"uuid,omitempty"`
+	Result         []byte          `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
+	ErrorCode      uint32          `protobuf:"varint,3,opt,name=errorCode" json:"errorCode,omitempty"`
+	Error          string          `protobuf:"bytes,4,opt,name=error" json:"error,omitempty"`
+	ChaincodeEvent *ChaincodeEvent `protobuf:"bytes,5,opt,name=chaincodeEvent" json:"chaincodeEvent,omitempty"`
 }
 
 func (m *TransactionResult) Reset()         { *m = TransactionResult{} }
 func (m *TransactionResult) String() string { return proto.CompactTextString(m) }
 func (*TransactionResult) ProtoMessage()    {}
+
+func (m *TransactionResult) GetChaincodeEvent() *ChaincodeEvent {
+	if m != nil {
+		return m.ChaincodeEvent
+	}
+	return nil
+}
+
+type Changeset struct {
+	Tables []*TableChangeset `protobuf:"bytes,1,rep,name=tables" json:"tables,omitempty"`
+}
+
+func (m *Changeset) Reset()         { *m = Changeset{} }
+func (m *Changeset) String() string { return proto.CompactTextString(m) }
+func (*Changeset) ProtoMessage()    {}
+
+func (m *Changeset) GetTables() []*TableChangeset {
+	if m != nil {
+		return m.Tables
+	}
+	return nil
+}
+
+type TableChangeset struct {
+	Name string          `protobuf:"bytes,1,opt,name=name" json:"name,omitempty"`
+	Rows []*RowChangeset `protobuf:"bytes,2,rep,name=rows" json:"rows,omitempty"`
+}
+
+func (m *TableChangeset) Reset()         { *m = TableChangeset{} }
+func (m *TableChangeset) String() string { return proto.CompactTextString(m) }
+func (*TableChangeset) ProtoMessage()    {}
+
+func (m *TableChangeset) GetRows() []*RowChangeset {
+	if m != nil {
+		return m.Rows
+	}
+	return nil
+}
+
+type RowChangeset struct {
+	Key       []byte `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value     []byte `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	PrevValue []byte `protobuf:"bytes,3,opt,name=prev_value,proto3" json:"prev_value,omitempty"`
+}
+
+func (m *RowChangeset) Reset()         { *m = RowChangeset{} }
+func (m *RowChangeset) String() string { return proto.CompactTextString(m) }
+func (*RowChangeset) ProtoMessage()    {}
 
 // Block carries The data that describes a block in the blockchain.
 // version - Version used to track any protocol changes.
@@ -245,6 +295,7 @@ type Block struct {
 	PreviousBlockHash []byte                     `protobuf:"bytes,5,opt,name=previousBlockHash,proto3" json:"previousBlockHash,omitempty"`
 	ConsensusMetadata []byte                     `protobuf:"bytes,6,opt,name=consensusMetadata,proto3" json:"consensusMetadata,omitempty"`
 	NonHashData       *NonHashData               `protobuf:"bytes,7,opt,name=nonHashData" json:"nonHashData,omitempty"`
+	Changes           []*Changeset               `protobuf:"bytes,9,rep,name=changes" json:"changes,omitempty"`
 }
 
 func (m *Block) Reset()         { *m = Block{} }
@@ -272,6 +323,13 @@ func (m *Block) GetNonHashData() *NonHashData {
 	return nil
 }
 
+func (m *Block) GetChanges() []*Changeset {
+	if m != nil {
+		return m.Changes
+	}
+	return nil
+}
+
 // Contains information about the blockchain ledger such as height, current
 // block hash, and previous block hash.
 type BlockchainInfo struct {
@@ -288,10 +346,8 @@ func (*BlockchainInfo) ProtoMessage()    {}
 // the block hash when verifying the blockchain.
 // localLedgerCommitTimestamp - The time at which the block was added
 // to the ledger on the local peer.
-// transactionResults - The results of transactions.
 type NonHashData struct {
 	LocalLedgerCommitTimestamp *google_protobuf.Timestamp `protobuf:"bytes,1,opt,name=localLedgerCommitTimestamp" json:"localLedgerCommitTimestamp,omitempty"`
-	TransactionResults         []*TransactionResult       `protobuf:"bytes,2,rep,name=transactionResults" json:"transactionResults,omitempty"`
 }
 
 func (m *NonHashData) Reset()         { *m = NonHashData{} }
@@ -301,13 +357,6 @@ func (*NonHashData) ProtoMessage()    {}
 func (m *NonHashData) GetLocalLedgerCommitTimestamp() *google_protobuf.Timestamp {
 	if m != nil {
 		return m.LocalLedgerCommitTimestamp
-	}
-	return nil
-}
-
-func (m *NonHashData) GetTransactionResults() []*TransactionResult {
-	if m != nil {
-		return m.TransactionResults
 	}
 	return nil
 }
@@ -361,6 +410,14 @@ func (m *PeersMessage) GetPeers() []*PeerEndpoint {
 	}
 	return nil
 }
+
+type PeersAddresses struct {
+	Addresses []string `protobuf:"bytes,1,rep,name=addresses" json:"addresses,omitempty"`
+}
+
+func (m *PeersAddresses) Reset()         { *m = PeersAddresses{} }
+func (m *PeersAddresses) String() string { return proto.CompactTextString(m) }
+func (*PeersAddresses) ProtoMessage()    {}
 
 type HelloMessage struct {
 	PeerEndpoint   *PeerEndpoint   `protobuf:"bytes,1,opt,name=peerEndpoint" json:"peerEndpoint,omitempty"`
@@ -439,8 +496,9 @@ func (m *BlockState) GetBlock() *Block {
 // example, if start=3 and end=5, the order of blocks will be 3, 4, 5.
 // If start=5 and end=3, the order will be 5, 4, 3.
 type SyncBlockRange struct {
-	Start uint64 `protobuf:"varint,1,opt,name=start" json:"start,omitempty"`
-	End   uint64 `protobuf:"varint,2,opt,name=end" json:"end,omitempty"`
+	CorrelationId uint64 `protobuf:"varint,1,opt,name=correlationId" json:"correlationId,omitempty"`
+	Start         uint64 `protobuf:"varint,2,opt,name=start" json:"start,omitempty"`
+	End           uint64 `protobuf:"varint,3,opt,name=end" json:"end,omitempty"`
 }
 
 func (m *SyncBlockRange) Reset()         { *m = SyncBlockRange{} }

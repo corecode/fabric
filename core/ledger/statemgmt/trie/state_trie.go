@@ -28,6 +28,8 @@ import (
 var stateTrieLogger = logging.MustGetLogger("stateTrie")
 var logHashOfEveryNode = false
 
+// StateTrie defines the trie for the state, a merkle tree where keys
+// and values are stored for fast hash computation.
 type StateTrie struct {
 	trieDelta              *trieDelta
 	persistedStateHash     []byte
@@ -35,10 +37,12 @@ type StateTrie struct {
 	recomputeCryptoHash    bool
 }
 
+// NewStateTrie contructs a new empty StateTrie
 func NewStateTrie() *StateTrie {
 	return &StateTrie{}
 }
 
+// Initialize the state trie with the root key
 func (stateTrie *StateTrie) Initialize(configs map[string]interface{}) error {
 	rootNode, err := fetchTrieNodeFromDB(rootTrieKey)
 	if err != nil {
@@ -51,6 +55,7 @@ func (stateTrie *StateTrie) Initialize(configs map[string]interface{}) error {
 	return nil
 }
 
+// Get the value for a given chaincode ID and key
 func (stateTrie *StateTrie) Get(chaincodeID string, key string) ([]byte, error) {
 	trieNode, err := fetchTrieNodeFromDB(newTrieKey(chaincodeID, key))
 	if err != nil {
@@ -62,12 +67,14 @@ func (stateTrie *StateTrie) Get(chaincodeID string, key string) ([]byte, error) 
 	return trieNode.value, nil
 }
 
+// PrepareWorkingSet creates the start of a new delta
 func (stateTrie *StateTrie) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) error {
 	stateTrie.trieDelta = newTrieDelta(stateDelta)
 	stateTrie.recomputeCryptoHash = true
 	return nil
 }
 
+// ClearWorkingSet clears the existing delta
 func (stateTrie *StateTrie) ClearWorkingSet(changesPersisted bool) {
 	stateTrie.trieDelta = nil
 	stateTrie.recomputeCryptoHash = false
@@ -79,6 +86,7 @@ func (stateTrie *StateTrie) ClearWorkingSet(changesPersisted bool) {
 	}
 }
 
+// ComputeCryptoHash returns the hash of the current state trie
 func (stateTrie *StateTrie) ComputeCryptoHash() ([]byte, error) {
 	stateTrieLogger.Debug("Enter - ComputeCryptoHash()")
 	if !stateTrie.recomputeCryptoHash {
@@ -86,7 +94,7 @@ func (stateTrie *StateTrie) ComputeCryptoHash() ([]byte, error) {
 		return stateTrie.lastComputedCryptoHash, nil
 	}
 	lowestLevel := stateTrie.trieDelta.getLowestLevel()
-	stateTrieLogger.Debug("Lowest level in trieDelta = [%d]", lowestLevel)
+	stateTrieLogger.Debugf("Lowest level in trieDelta = [%d]", lowestLevel)
 	for level := lowestLevel; level > 0; level-- {
 		changedNodes := stateTrie.trieDelta.deltaMap[level]
 		for _, changedNode := range changedNodes {
@@ -108,13 +116,13 @@ func (stateTrie *StateTrie) ComputeCryptoHash() ([]byte, error) {
 }
 
 func (stateTrie *StateTrie) processChangedNode(changedNode *trieNode) error {
-	stateTrieLogger.Debug("Enter - processChangedNode() for node [%s]", changedNode)
+	stateTrieLogger.Debugf("Enter - processChangedNode() for node [%s]", changedNode)
 	dbNode, err := fetchTrieNodeFromDB(changedNode.trieKey)
 	if err != nil {
 		return err
 	}
 	if dbNode != nil {
-		stateTrieLogger.Debug("processChangedNode() - merging attributes from db node [%s]", dbNode)
+		stateTrieLogger.Debugf("processChangedNode() - merging attributes from db node [%s]", dbNode)
 		changedNode.mergeMissingAttributesFrom(dbNode)
 	}
 	newCryptoHash := changedNode.computeCryptoHash()
@@ -125,13 +133,14 @@ func (stateTrie *StateTrie) processChangedNode(changedNode *trieNode) error {
 	}
 	parentNode.setChildCryptoHash(changedNode.getIndexInParent(), newCryptoHash)
 	if logHashOfEveryNode {
-		stateTrieLogger.Debug("Hash for changedNode[%s]", changedNode)
-		stateTrieLogger.Debug("%#v", newCryptoHash)
+		stateTrieLogger.Debugf("Hash for changedNode[%s]", changedNode)
+		stateTrieLogger.Debugf("%#v", newCryptoHash)
 	}
-	stateTrieLogger.Debug("Exit - processChangedNode() for node [%s]", changedNode)
+	stateTrieLogger.Debugf("Exit - processChangedNode() for node [%s]", changedNode)
 	return nil
 }
 
+// AddChangesForPersistence commits current changes to the database
 func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch) error {
 	if stateTrie.recomputeCryptoHash {
 		_, err := stateTrie.ComputeCryptoHash()
@@ -165,6 +174,7 @@ func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.Write
 	return nil
 }
 
+// PerfHintKeyChanged is currently a no-op. Can perform pre-fetching of relevant data from db here.
 func (stateTrie *StateTrie) PerfHintKeyChanged(chaincodeID string, key string) {
 	// nothing for now. Can perform pre-fetching of relevant data from db here.
 }
@@ -174,6 +184,7 @@ func (stateTrie *StateTrie) GetStateSnapshotIterator(snapshot *gorocksdb.Snapsho
 	return newStateSnapshotIterator(snapshot)
 }
 
+// GetRangeScanIterator returns an iterator for performing a range scan between the start and end keys
 func (stateTrie *StateTrie) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
 	return newRangeScanIterator(chaincodeID, startKey, endKey)
 }

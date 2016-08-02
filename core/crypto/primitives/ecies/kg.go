@@ -18,8 +18,10 @@ package ecies
 
 import (
 	"crypto/elliptic"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"fmt"
 	"io"
+
+	"github.com/hyperledger/fabric/core/crypto/primitives"
 )
 
 type keyGeneratorParameterImpl struct {
@@ -52,6 +54,9 @@ func (kg *keyGeneratorImpl) Init(params primitives.KeyGeneratorParameters) error
 }
 
 func (kg *keyGeneratorImpl) GenerateKey() (primitives.PrivateKey, error) {
+	if kg.params == nil {
+		return nil, fmt.Errorf("Key Generator not initliazed")
+	}
 
 	privKey, err := eciesGenerateKey(
 		kg.params.rand,

@@ -21,9 +21,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/op/go-logging"
-
 	pb "github.com/hyperledger/fabric/protos"
+	"github.com/op/go-logging"
 )
 
 const defaultTimeout = time.Second * 3
@@ -44,6 +43,7 @@ func NewEventsServer(bufferSize uint, timeout int) *EventsServer {
 	}
 	globalEventsServer = new(EventsServer)
 	initializeEvents(bufferSize, timeout)
+	//initializeCCEventProcessor(bufferSize, timeout)
 	return globalEventsServer
 }
 
@@ -67,8 +67,9 @@ func (p *EventsServer) Chat(stream pb.Events_ChatServer) error {
 		}
 		err = handler.HandleMessage(in)
 		if err != nil {
-			producerLogger.Error(fmt.Sprintf("Error handling message: %s", err))
+			producerLogger.Errorf("Error handling message: %s", err)
 			//return err
 		}
+
 	}
 }

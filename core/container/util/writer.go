@@ -27,18 +27,27 @@ import (
 	"time"
 
 	"github.com/op/go-logging"
+	"github.com/spf13/viper"
 )
 
 var vmLogger = logging.MustGetLogger("container")
 
+var fileTypes = map[string]bool{
+	".c":    true,
+	".h":    true,
+	".go":   true,
+	".yaml": true,
+	".json": true,
+}
+
 //WriteGopathSrc tars up files under gopath src
 func WriteGopathSrc(tw *tar.Writer, excludeDir string) error {
 	gopath := os.Getenv("GOPATH")
-	if strings.LastIndex(gopath, "/") == len(gopath)-1 {
-		gopath = gopath[:len(gopath)]
-	}
-	rootDirectory := fmt.Sprintf("%s%s%s", os.Getenv("GOPATH"), string(os.PathSeparator), "src")
-	vmLogger.Info("rootDirectory = %s", rootDirectory)
+	// Only take the first element of GOPATH
+	gopath = filepath.SplitList(gopath)[0]
+
+	rootDirectory := filepath.Join(gopath, "src")
+	vmLogger.Infof("rootDirectory = %s", rootDirectory)
 
 	//append "/" if necessary
 	if excludeDir != "" && strings.LastIndex(excludeDir, "/") < len(excludeDir)-1 {
@@ -67,6 +76,12 @@ func WriteGopathSrc(tw *tar.Writer, excludeDir string) error {
 			return nil
 		}
 
+		// we only want 'fileTypes' source files at this point
+		ext := filepath.Ext(path)
+		if _, ok := fileTypes[ext]; ok != true {
+			return nil
+		}
+
 		newPath := fmt.Sprintf("src%s", path[rootDirLen:])
 		//newPath := path[len(rootDirectory):]
 
@@ -79,9 +94,18 @@ func WriteGopathSrc(tw *tar.Writer, excludeDir string) error {
 	}
 
 	if err := filepath.Walk(rootDirectory, walkFn); err != nil {
-		vmLogger.Info("Error walking rootDirectory: %s", err)
+		vmLogger.Infof("Error walking rootDirectory: %s", err)
 		return err
 	}
+
+	// Add the certificates to tar
+	if viper.GetBool("peer.tls.enabled") {
+		err := WriteFileToPackage(viper.GetString("peer.tls.cert.file"), "src/certs/cert.pem", tw)
+		if err != nil {
+			return fmt.Errorf("Error writing cert file to package: %s", err)
+		}
+	}
+
 	// Write the tar file out
 	if err := tw.Close(); err != nil {
 		return err

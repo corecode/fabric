@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
@@ -44,6 +45,13 @@ var columnfamilies = []string{
 	persistCF,    // persistent per-peer state (consensus)
 }
 
+type dbState int32
+
+const (
+	closed dbState = iota
+	opened
+)
+
 // OpenchainDB encapsulates rocksdb's structures
 type OpenchainDB struct {
 	DB           *gorocksdb.DB
@@ -52,59 +60,20 @@ type OpenchainDB struct {
 	StateDeltaCF *gorocksdb.ColumnFamilyHandle
 	IndexesCF    *gorocksdb.ColumnFamilyHandle
 	PersistCF    *gorocksdb.ColumnFamilyHandle
+	dbState      dbState
+	mux          sync.Mutex
 }
 
-var openchainDB *OpenchainDB
-var isOpen bool
+var openchainDB = Create()
 
-// CreateDB creates a rocks db database
-func CreateDB() error {
-	dbPath := getDBPath()
-	dbLogger.Debug("Creating DB at [%s]", dbPath)
-	missing, err := dirMissingOrEmpty(dbPath)
-	if err != nil {
-		return err
-	}
-
-	if !missing {
-		return fmt.Errorf("db dir [%s] already exists", dbPath)
-	}
-	err = os.MkdirAll(path.Dir(dbPath), 0755)
-	if err != nil {
-		dbLogger.Error("Error calling  os.MkdirAll for directory path [%s]: %s", dbPath, err)
-		return fmt.Errorf("Error making directory path [%s]: %s", dbPath, err)
-	}
-	opts := gorocksdb.NewDefaultOptions()
-	defer opts.Destroy()
-	opts.SetCreateIfMissing(true)
-
-	db, err := gorocksdb.OpenDb(opts, dbPath)
-	if err != nil {
-		return err
-	}
-
-	defer db.Close()
-
-	dbLogger.Debug("DB created at [%s]", dbPath)
-	return nil
+// Create create an openchainDB instance
+func Create() *OpenchainDB {
+	return &OpenchainDB{dbState: closed}
 }
 
-// GetDBHandle returns a handle to OpenchainDB
+// GetDBHandle get an opened openchainDB singleton
 func GetDBHandle() *OpenchainDB {
-	var err error
-	if isOpen {
-		return openchainDB
-	}
-
-	err = createDBIfDBPathEmpty()
-	if err != nil {
-		panic(fmt.Sprintf("Error while trying to create DB: %s", err))
-	}
-
-	openchainDB, err = openDB()
-	if err != nil {
-		panic(fmt.Sprintf("Could not open openchain db error = [%s]", err))
-	}
+	openchainDB.Open()
 	return openchainDB
 }
 
@@ -172,61 +141,74 @@ func getDBPath() string {
 	return dbPath + "db"
 }
 
-func createDBIfDBPathEmpty() error {
+// Open open underlying rocksdb
+func (openchainDB *OpenchainDB) Open() {
+	openchainDB.mux.Lock()
+	if openchainDB.dbState == opened {
+		openchainDB.mux.Unlock()
+		return
+	}
+
+	defer openchainDB.mux.Unlock()
+
 	dbPath := getDBPath()
 	missing, err := dirMissingOrEmpty(dbPath)
 	if err != nil {
-		return err
+		panic(fmt.Sprintf("Error while trying to open DB: %s", err))
 	}
-	dbLogger.Debug("Is db path [%s] empty [%t]", dbPath, missing)
+	dbLogger.Debugf("Is db path [%s] empty [%t]", dbPath, missing)
+
 	if missing {
-		err := CreateDB()
+		err = os.MkdirAll(path.Dir(dbPath), 0755)
 		if err != nil {
-			return nil
+			panic(fmt.Sprintf("Error making directory path [%s]: %s", dbPath, err))
 		}
 	}
-	return nil
-}
 
-func openDB() (*OpenchainDB, error) {
-	if isOpen {
-		return openchainDB, nil
-	}
-
-	dbPath := getDBPath()
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
 
-	opts.SetCreateIfMissing(false)
+	opts.SetCreateIfMissing(missing)
 	opts.SetCreateIfMissingColumnFamilies(true)
 
 	cfNames := []string{"default"}
 	cfNames = append(cfNames, columnfamilies...)
 	var cfOpts []*gorocksdb.Options
-	for _ = range cfNames {
+	for range cfNames {
 		cfOpts = append(cfOpts, opts)
 	}
 
 	db, cfHandlers, err := gorocksdb.OpenDbColumnFamilies(opts, dbPath, cfNames, cfOpts)
 
 	if err != nil {
-		fmt.Println("Error opening DB", err)
-		return nil, err
+		panic(fmt.Sprintf("Error opening DB: %s", err))
 	}
-	isOpen = true
-	// XXX should we close cfHandlers[0]?
-	return &OpenchainDB{db, cfHandlers[1], cfHandlers[2], cfHandlers[3], cfHandlers[4], cfHandlers[5]}, nil
+
+	openchainDB.DB = db
+	openchainDB.BlockchainCF = cfHandlers[1]
+	openchainDB.StateCF = cfHandlers[2]
+	openchainDB.StateDeltaCF = cfHandlers[3]
+	openchainDB.IndexesCF = cfHandlers[4]
+	openchainDB.PersistCF = cfHandlers[5]
+	openchainDB.dbState = opened
 }
 
-// CloseDB releases all column family handles and closes rocksdb
-func (openchainDB *OpenchainDB) CloseDB() {
+// Close releases all column family handles and closes rocksdb
+func (openchainDB *OpenchainDB) Close() {
+	openchainDB.mux.Lock()
+	if openchainDB.dbState == closed {
+		openchainDB.mux.Unlock()
+		return
+	}
+
+	defer openchainDB.mux.Unlock()
 	openchainDB.BlockchainCF.Destroy()
 	openchainDB.StateCF.Destroy()
 	openchainDB.StateDeltaCF.Destroy()
 	openchainDB.IndexesCF.Destroy()
 	openchainDB.PersistCF.Destroy()
 	openchainDB.DB.Close()
-	isOpen = false
+	openchainDB.dbState = closed
 }
 
 // DeleteState delets ALL state keys/values from the DB. This is generally
@@ -235,29 +217,30 @@ func (openchainDB *OpenchainDB) CloseDB() {
 func (openchainDB *OpenchainDB) DeleteState() error {
 	err := openchainDB.DB.DropColumnFamily(openchainDB.StateCF)
 	if err != nil {
-		dbLogger.Error("Error dropping state CF", err)
+		dbLogger.Errorf("Error dropping state CF: %s", err)
 		return err
 	}
 	err = openchainDB.DB.DropColumnFamily(openchainDB.StateDeltaCF)
 	if err != nil {
-		dbLogger.Error("Error dropping state delta CF", err)
+		dbLogger.Errorf("Error dropping state delta CF: %s", err)
 		return err
 	}
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
 	openchainDB.StateCF, err = openchainDB.DB.CreateColumnFamily(opts, stateCF)
 	if err != nil {
-		dbLogger.Error("Error creating state CF", err)
+		dbLogger.Errorf("Error creating state CF: %s", err)
 		return err
 	}
 	openchainDB.StateDeltaCF, err = openchainDB.DB.CreateColumnFamily(opts, stateDeltaCF)
 	if err != nil {
-		dbLogger.Error("Error creating state delta CF", err)
+		dbLogger.Errorf("Error creating state delta CF: %s", err)
 		return err
 	}
 	return nil
 }
 
+// Get returns the valud for the given column family and key
 func (openchainDB *OpenchainDB) Get(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {
 	opt := gorocksdb.NewDefaultReadOptions()
 	defer opt.Destroy()
@@ -274,6 +257,7 @@ func (openchainDB *OpenchainDB) Get(cfHandler *gorocksdb.ColumnFamilyHandle, key
 	return data, nil
 }
 
+// Put saves the key/value in the given column family
 func (openchainDB *OpenchainDB) Put(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte, value []byte) error {
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
@@ -285,6 +269,7 @@ func (openchainDB *OpenchainDB) Put(cfHandler *gorocksdb.ColumnFamilyHandle, key
 	return nil
 }
 
+// Delete delets the given key in the specified column family
 func (openchainDB *OpenchainDB) Delete(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte) error {
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
@@ -310,6 +295,7 @@ func (openchainDB *OpenchainDB) getFromSnapshot(snapshot *gorocksdb.Snapshot, cf
 	return data, nil
 }
 
+// GetIterator returns an iterator for the given column family
 func (openchainDB *OpenchainDB) GetIterator(cfHandler *gorocksdb.ColumnFamilyHandle) *gorocksdb.Iterator {
 	opt := gorocksdb.NewDefaultReadOptions()
 	opt.SetFillCache(true)

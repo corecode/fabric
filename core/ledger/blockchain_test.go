@@ -25,8 +25,33 @@ import (
 	"github.com/hyperledger/fabric/protos"
 )
 
+func TestBlockchain_InfoNoBlock(t *testing.T) {
+	testDBWrapper.CleanDB(t)
+	blockchainTestWrapper := newTestBlockchainWrapper(t)
+	blockchain := blockchainTestWrapper.blockchain
+	blockchainInfo, err := blockchain.getBlockchainInfo()
+	testutil.AssertNoError(t, err, "Error while invoking getBlockchainInfo() on an emply blockchain")
+	testutil.AssertEquals(t, blockchainInfo.Height, uint64(0))
+	testutil.AssertEquals(t, blockchainInfo.CurrentBlockHash, nil)
+	testutil.AssertEquals(t, blockchainInfo.PreviousBlockHash, nil)
+}
+
+func TestBlockchain_Info(t *testing.T) {
+	testDBWrapper.CleanDB(t)
+	blockchainTestWrapper := newTestBlockchainWrapper(t)
+	blocks, _, _ := blockchainTestWrapper.populateBlockChainWithSampleData()
+
+	blockchain := blockchainTestWrapper.blockchain
+	blockchainInfo, _ := blockchain.getBlockchainInfo()
+	testutil.AssertEquals(t, blockchainInfo.Height, uint64(3))
+	currentBlockHash, _ := blocks[len(blocks)-1].GetHash()
+	previousBlockHash, _ := blocks[len(blocks)-2].GetHash()
+	testutil.AssertEquals(t, blockchainInfo.CurrentBlockHash, currentBlockHash)
+	testutil.AssertEquals(t, blockchainInfo.PreviousBlockHash, previousBlockHash)
+}
+
 func TestBlockChain_SingleBlock(t *testing.T) {
-	testDBWrapper.CreateFreshDB(t)
+	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	blockchain := blockchainTestWrapper.blockchain
 
@@ -49,7 +74,7 @@ func TestBlockChain_SingleBlock(t *testing.T) {
 }
 
 func TestBlockChain_SimpleChain(t *testing.T) {
-	testDBWrapper.CreateFreshDB(t)
+	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	blockchain := blockchainTestWrapper.blockchain
 	allBlocks, allStateHashes, err := blockchainTestWrapper.populateBlockChainWithSampleData()
@@ -84,7 +109,7 @@ func TestBlockChain_SimpleChain(t *testing.T) {
 }
 
 func TestBlockChainEmptyChain(t *testing.T) {
-	testDBWrapper.CreateFreshDB(t)
+	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	testutil.AssertEquals(t, blockchainTestWrapper.blockchain.getSize(), uint64(0))
 	block := blockchainTestWrapper.getLastBlock()
@@ -95,7 +120,7 @@ func TestBlockChainEmptyChain(t *testing.T) {
 }
 
 func TestBlockchainBlockLedgerCommitTimestamp(t *testing.T) {
-	testDBWrapper.CreateFreshDB(t)
+	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	block1 := protos.NewBlock(nil, nil)
 	startTime := util.CreateUtcTimestamp()

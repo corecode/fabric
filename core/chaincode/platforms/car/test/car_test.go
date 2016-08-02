@@ -20,8 +20,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/container"
 	"github.com/hyperledger/fabric/core/config"
+	"github.com/hyperledger/fabric/core/container"
 	pb "github.com/hyperledger/fabric/protos"
 )
 
@@ -31,10 +31,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestCar_BuildImage(t *testing.T) {
-	if os.Getenv("VAGRANT") == "" {
-		t.Skip("skipping test; only supported within vagrant")
-	}
-
 	vm, err := container.NewVM()
 	if err != nil {
 		t.Fail()
