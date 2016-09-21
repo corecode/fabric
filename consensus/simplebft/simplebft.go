@@ -36,6 +36,7 @@ type System interface {
 	SetReceiver(receiver Receiver)
 	Persist(key string, data proto.Message)
 	Restore(key string, out proto.Message) bool
+	LastBatch() *Batch
 	Sign(data []byte) []byte
 	CheckSig(data []byte, src uint64, sig []byte) error
 }
@@ -124,20 +125,15 @@ func New(id uint64, config *Config, sys System) (*SBFT, error) {
 		s.cur.executed = true
 		s.sendCheckpoint()
 	}
-	// TODO use block chain (deliver) instead
-	cpset := &CheckpointSet{}
-	if s.sys.Restore("checkpoint", cpset) {
-		// get one entry
-		var c *Checkpoint
-		for _, c = range cpset.CheckpointSet {
-			break
-		}
-
-		if c.Seq == s.cur.subject.Seq.Seq {
-			s.cur.timeout.Cancel()
-			s.seq = *s.cur.subject.Seq
-			s.cur.checkpointDone = true
-		}
+	lastBatch := s.sys.LastBatch()
+	bh, err := s.checkBatch(lastBatch)
+	if err != nil {
+		panic(err)
+	}
+	if bh.Seq == s.cur.subject.Seq.Seq {
+		s.cur.timeout.Cancel()
+		s.seq = *s.cur.subject.Seq
+		s.cur.checkpointDone = true
 	}
 
 	// XXX set active after checking with the network

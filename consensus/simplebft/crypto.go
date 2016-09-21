@@ -61,7 +61,11 @@ func merkleHashDigests(digests [][]byte) []byte {
 		digests = nextDigests
 	}
 
-	return digests[0]
+	if len(digests) > 0 {
+		return digests[0]
+	} else {
+		return nil
+	}
 }
 
 ////////////////////////////////////////////////

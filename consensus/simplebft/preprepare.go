@@ -16,11 +16,7 @@ limitations under the License.
 
 package simplebft
 
-import (
-	"time"
-
-	"github.com/golang/protobuf/proto"
-)
+import "time"
 
 func (s *SBFT) sendPreprepare(batch []*Request) {
 	seq := s.nextSeq()
@@ -30,24 +26,11 @@ func (s *SBFT) sendPreprepare(batch []*Request) {
 		data[i] = req.Payload
 	}
 
-	datahash := merkleHashData(data)
-
-	batchhead := &BatchHeader{
-		Seq:      seq.Seq,
-		PrevHash: []byte("XXX"),
-		DataHash: datahash,
-	}
-	rawHeader, err := proto.Marshal(batchhead)
-	if err != nil {
-		panic(err)
-	}
+	lasthash := hash(s.sys.LastBatch().Header)
 
 	m := &Preprepare{
-		Seq: &seq,
-		Batch: &Batch{
-			Header:   rawHeader,
-			Payloads: data,
-		},
+		Seq:   &seq,
+		Batch: s.makeBatch(seq.Seq, lasthash, data),
 	}
 
 	s.sys.Persist("preprepare", m)

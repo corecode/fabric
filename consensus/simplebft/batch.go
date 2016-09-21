@@ -23,6 +23,24 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
+func (s *SBFT) makeBatch(seq uint64, prevHash []byte, data [][]byte) *Batch {
+	datahash := merkleHashData(data)
+
+	batchhead := &BatchHeader{
+		Seq:      seq,
+		PrevHash: prevHash,
+		DataHash: datahash,
+	}
+	rawHeader, err := proto.Marshal(batchhead)
+	if err != nil {
+		panic(err)
+	}
+	return &Batch{
+		Header:   rawHeader,
+		Payloads: data,
+	}
+}
+
 func (s *SBFT) checkBatch(b *Batch) (*BatchHeader, error) {
 	datahash := merkleHashData(b.Payloads)
 

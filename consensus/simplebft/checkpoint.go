@@ -82,7 +82,6 @@ func (s *SBFT) handleCheckpoint(c *Checkpoint, src uint64) {
 		cpset.CheckpointSet[r] = cp
 		sigs = append(sigs, cp.Signature)
 	}
-	s.sys.Persist("checkpoint", cpset)
 	s.cur.checkpointDone = true
 
 	c = s.cur.checkpoint[replicas[0]]

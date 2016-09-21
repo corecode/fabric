@@ -147,6 +147,14 @@ func (t *testSystemAdapter) Restore(key string, out proto.Message) bool {
 	return (err == nil)
 }
 
+func (t *testSystemAdapter) LastBatch() *Batch {
+	if len(t.batches) == 0 {
+		return t.receiver.(*SBFT).makeBatch(0, []byte("ROOTHASH"), nil)
+	} else {
+		return t.batches[len(t.batches)-1]
+	}
+}
+
 func (t *testSystemAdapter) Sign(data []byte) []byte {
 	hash := sha256.Sum256(data)
 	r, s, err := ecdsa.Sign(crand.Reader, t.key, hash[:])
