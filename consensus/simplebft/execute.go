@@ -21,7 +21,6 @@ func (s *SBFT) maybeExecute() {
 		return
 	}
 	s.cur.executed = true
-	s.cur.timeout.Cancel()
 	s.seq = *s.cur.subject.Seq
 	log.Noticef("executing %v", s.seq)
 

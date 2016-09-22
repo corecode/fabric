@@ -103,17 +103,28 @@ func New(id uint64, config *Config, sys System) (*SBFT, error) {
 	}
 	s.sys.SetReceiver(s)
 
+	lastBatch := s.sys.LastBatch()
+	bh, err := s.checkBatch(lastBatch)
+	if err != nil {
+		panic(err)
+	}
+
 	s.seq.View = 0
-	s.seq.Seq = 0
+	s.seq.Seq = bh.Seq
 	s.cur.subject.Seq = &s.seq
+	s.cur.sentCommit = true
 	s.cur.executed = true
+	s.cur.checkpointDone = true
 	s.cur.timeout = dummyCanceller{}
 
 	pp := &Preprepare{}
 	if s.sys.Restore("preprepare", pp) {
-		s.seq = *pp.Seq
-		s.seq.Seq -= 1
-		s.handlePreprepare(pp, s.primaryIdView(pp.Seq.View))
+		s.seq.View = pp.Seq.View
+		if pp.Seq.Seq > bh.Seq {
+			s.seq = *pp.Seq
+			s.seq.Seq -= 1
+			s.handlePreprepare(pp, s.primaryIdView(pp.Seq.View))
+		}
 	}
 	c := &Subject{}
 	if s.sys.Restore("commit", c) && reflect.DeepEqual(c, &s.cur.subject) {
@@ -124,16 +135,6 @@ func New(id uint64, config *Config, sys System) (*SBFT, error) {
 	if s.sys.Restore("execute", ex) && reflect.DeepEqual(c, &s.cur.subject) {
 		s.cur.executed = true
 		s.sendCheckpoint()
-	}
-	lastBatch := s.sys.LastBatch()
-	bh, err := s.checkBatch(lastBatch)
-	if err != nil {
-		panic(err)
-	}
-	if bh.Seq == s.cur.subject.Seq.Seq {
-		s.cur.timeout.Cancel()
-		s.seq = *s.cur.subject.Seq
-		s.cur.checkpointDone = true
 	}
 
 	// XXX set active after checking with the network

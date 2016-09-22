@@ -16,7 +16,10 @@ limitations under the License.
 
 package simplebft
 
-import "time"
+import (
+	"bytes"
+	"time"
+)
 
 func (s *SBFT) sendPreprepare(batch []*Request) {
 	seq := s.nextSeq()
@@ -47,12 +50,21 @@ func (s *SBFT) handlePreprepare(pp *Preprepare, src uint64) {
 		log.Infof("preprepare does not match expected %v, got %v", nextSeq, *pp.Seq)
 		return
 	}
-	blockhash := hash(pp.Batch.Header)
+	var blockhash []byte
+	if pp.Batch != nil {
+		blockhash = hash(pp.Batch.Header)
 
-	batchheader, err := s.checkBatch(pp.Batch)
-	if err != nil || batchheader.Seq != pp.Seq.Seq {
-		log.Infof("preprepare %v batch head inconsistent from %d", pp.Seq, src)
-		return
+		batchheader, err := s.checkBatch(pp.Batch)
+		if err != nil || batchheader.Seq != pp.Seq.Seq {
+			log.Infof("preprepare %v batch head inconsistent from %d", pp.Seq, src)
+			return
+		}
+
+		prevhash := hash(s.sys.LastBatch().Header)
+		if !bytes.Equal(batchheader.PrevHash, prevhash) {
+			log.Infof("preprepare batch prev hash does not match expected %s, got %s", hash2str(batchheader.PrevHash), hash2str(prevhash))
+			return
+		}
 	}
 
 	s.acceptPreprepare(Subject{Seq: &nextSeq, Digest: blockhash}, pp)
