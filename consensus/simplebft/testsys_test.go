@@ -45,6 +45,23 @@ type testSystemAdapter struct {
 }
 
 func (t *testSystemAdapter) SetReceiver(recv Receiver) {
+	if t.receiver != nil {
+		// remove all events for us
+		t.sys.queue.filter(func(e testElem) bool {
+			switch e := e.ev.(type) {
+			case *testTimer:
+				if e.id == t.id {
+					return false
+				}
+			case *testMsgEvent:
+				if e.dst == t.id {
+					return false
+				}
+			}
+			return true
+		})
+	}
+
 	t.receiver = recv
 }
 

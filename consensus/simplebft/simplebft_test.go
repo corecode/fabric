@@ -366,9 +366,6 @@ func TestRestartAfterPrepare(t *testing.T) {
 
 			if p := msg.msg.GetPrepare(); p != nil && p.Seq.Seq == 3 && !restarted {
 				restarted = true
-				testLog.Notice("restarting 0")
-				// clear timer events for 0
-				repls[0].cur.timeout.Cancel()
 				repls[0], _ = New(0, &Config{N: N, F: 1, BatchDurationNsec: 2000000000, BatchSizeBytes: 10, RequestTimeoutNsec: 20000000000}, adapters[0])
 			}
 		}
@@ -430,8 +427,6 @@ func TestRestartAfterCommit(t *testing.T) {
 			if c := msg.msg.GetCommit(); c != nil && c.Seq.Seq == 3 && !restarted {
 				restarted = true
 				testLog.Notice("restarting 0")
-				// clear timer events for 0
-				repls[0].cur.timeout.Cancel()
 				repls[0], _ = New(0, &Config{N: N, F: 1, BatchDurationNsec: 2000000000, BatchSizeBytes: 10, RequestTimeoutNsec: 20000000000}, adapters[0])
 			}
 		}
@@ -493,8 +488,6 @@ func TestRestartAfterCheckpoint(t *testing.T) {
 			if c := msg.msg.GetCheckpoint(); c != nil && c.Seq == 3 && !restarted {
 				restarted = true
 				testLog.Notice("restarting 0")
-				// clear timer events for 0
-				repls[0].cur.timeout.Cancel()
 				repls[0], _ = New(0, &Config{N: N, F: 1, BatchDurationNsec: 2000000000, BatchSizeBytes: 10, RequestTimeoutNsec: 20000000000}, adapters[0])
 			}
 		}

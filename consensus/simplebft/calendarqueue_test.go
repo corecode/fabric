@@ -98,6 +98,25 @@ func (t *calendarQueue) Pop() (testElem, bool) {
 	return t.Pop() // retry!
 }
 
+func (t *calendarQueue) filter(fn func(testElem) bool) {
+	for sli, sl := range t.slots {
+		var del []int
+		for i, e := range sl {
+			if !fn(e) {
+				del = append(del, i)
+			}
+		}
+
+		// now delete
+		for i, e := range del {
+			correctedPos := e - i
+			// in-place remove
+			sl = sl[:correctedPos+copy(sl[correctedPos:], sl[correctedPos+1:])]
+		}
+		t.slots[sli] = sl
+	}
+}
+
 /////////////////////////////////////////
 
 type testElemQueue []testElem
