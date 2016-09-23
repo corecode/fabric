@@ -50,6 +50,9 @@ func (s *SBFT) maybeSendNewView() {
 			log.Warningf("forfeiting primary - do not have request in store for %d %x", xset.Seq.Seq, xset.Digest)
 			xset = nil
 		}
+	} else {
+		batch = s.makeBatch(xset.Seq.Seq, s.sys.LastBatch().Hash(), nil)
+		xset.Digest = batch.Hash()
 	}
 
 	nv := &NewView{
@@ -93,27 +96,36 @@ func (s *SBFT) handleNewView(nv *NewView, src uint64) {
 	}
 
 	xset, ok := s.makeXset(vcs)
+	if xset.Digest == nil {
+		// null request special treatment
+		xset.Digest = s.makeBatch(nv.Xset.Seq.Seq, s.sys.LastBatch().Hash(), nil).Hash()
+	}
+
 	if !ok || !reflect.DeepEqual(nv.Xset, xset) {
 		log.Warningf("invalid new view from %d: xset incorrect: %v, %v", src, nv.Xset, xset)
 		s.sendViewChange()
 		return
 	}
 
-	if !(nv.Xset.Digest == nil && nv.Batch == nil) && !reflect.DeepEqual(hash(nv.Batch.Header), nv.Xset.Digest) {
+	if nv.Batch == nil {
+		log.Warningf("invalid new view from %d: batch empty", src)
+		s.sendViewChange()
+		return
+	}
+
+	if !reflect.DeepEqual(hash(nv.Batch.Header), nv.Xset.Digest) {
 		log.Warningf("invalid new view from %d: batch head hash does not match xset: %x, %x, %v",
 			src, hash(nv.Batch.Header), nv.Xset.Digest, nv)
 		s.sendViewChange()
 		return
 	}
 
-	if nv.Batch != nil {
-		_, err := s.checkBatch(nv.Batch)
-		if err != nil {
-			log.Warningf("invalid new view from %d: invalid batch, %s",
-				src, err)
-			s.sendViewChange()
-			return
-		}
+	_, err := s.checkBatch(nv.Batch)
+	if err != nil {
+		log.Warningf("invalid new view from %d: invalid batch, %s",
+			src, err)
+		s.sendViewChange()
+		return
 	}
 
 	s.newview[s.primaryIdView(nv.View)] = nv
