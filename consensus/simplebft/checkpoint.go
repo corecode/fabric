@@ -69,11 +69,11 @@ func (s *SBFT) handleCheckpoint(c *Checkpoint, src uint64) {
 	}
 
 	replicas, ok := sums[max]
-	if !ok || len(sums[max]) != s.oneCorrectQuorum() {
+	if !ok {
 		return
 	}
 
-	// got a stable checkpoint
+	// got a weak checkpoint
 
 	cpset := &CheckpointSet{make(map[uint64]*Checkpoint)}
 	var sigs [][]byte
